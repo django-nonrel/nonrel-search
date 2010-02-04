@@ -230,7 +230,10 @@ class SearchIndexField(SearchableListField):
 
     def should_index(self, values):
         # Check if filter doesn't match
-        for filter, value in get_filters(*self.filters):
+        for filter, value in self.filters.items():
+            # TODO: attr, oop has to be retrieved differently because we cannot
+            # longer assume that the operator is seperated by a space from the attr
+            # see how django solves this
             attr, op = filter.split(' ')
             op = op.lower()
             if (op == '=' and values[attr] != value or
