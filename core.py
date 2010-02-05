@@ -3,7 +3,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.core.urlresolvers import reverse
 from django.db import models
 from django.db.models import signals
-from django.db.transaction import commit_locked
+#from django.db.transaction import commit_locked
 from djangotoolbox.fields import ListField
 from djangotoolbox.utils import getattr_by_path
 try:
@@ -80,12 +80,6 @@ def site_language(instance, **kwargs):
     if hasattr(instance, 'lang'):
         return instance.lang
 
-    # Does the entity have a language-specific site?
-    if hasattr(instance.__class__, 'site'):
-        key = instance.__class__.site.get_value_for_datastore(instance)
-        if key.name() and key.name().startswith('lang:'):
-            return key.name().split(':', 1)[-1]
-
     # Fall back to default language
     return settings.LANGUAGE_CODE
 
@@ -149,8 +143,7 @@ class StringListField(ListField):
         self.model_class = cls
         super(StringListField, self).contribute_to_class(cls, name)
 
-# TODO: keys_only is to app engine specific, there should be a way to refactore
-# this out into the backend,
+# TODO: keys_only is to app engine specific, use .values('pk') instead
 # filters should be some function in order to support django's exlude functionality,
 # Q-objects, ...
 class SearchableListField(StringListField):
@@ -252,15 +245,8 @@ class SearchIndexField(SearchableListField):
 #    @commit_locked
     def update_relation_index(self, parent_key, delete=False):
         model = self._relation_index_model
-        
-        # Generate key name (at most 250 chars)
-        pk = unicode(parent_key)
-        if len(pk) > 250:
-            pk = pk[:250]
-        
-#        index = model.get_by_key_name(key_name, parent=parent_key)
         try:
-            index = model.objects.get(pk=pk)
+            index = model.objects.get(pk=parent_key)
         except ObjectDoesNotExist:
             index = None
         
@@ -282,7 +268,7 @@ class SearchIndexField(SearchableListField):
         
         # Update/create index
         if not index:
-            index = model(pk=pk, **values)
+            index = model(pk=parent_key, **values)
 
         # This guarantees that we also set virtual @properties
         for key, value in values.items():
@@ -291,9 +277,7 @@ class SearchIndexField(SearchableListField):
         index.save()
 
     def create_index_model(self):
-        # TODO:what's MODEL_NAME???
-        attrs = dict(MODEL_NAME=self.model_class._meta.object_name,
-                     PROPERTY_NAME=self.name)
+        attrs = dict()
         # By default we integrate everything when using relation index
         if self.relation_index and self.integrate == ('*',):
             self.integrate = tuple(field.name
@@ -386,6 +370,10 @@ class SearchIndexField(SearchableListField):
             items = getattr(self._relation_index_model, self.name).search(query,
                 filters, language=language,
                 keys_only=True)
+            # TODO: Add support for values('pk') to the app engine backend
+#            items = getattr(self._relation_index_model, self.name).search(query,
+#                filters, language=language,
+#                keys_only=True).values('pk')
             return RelationIndexQuery(self, items, keys_only=keys_only)
         return super(SearchIndexField, self).search(query, filters,
             splitter=self.splitter,
@@ -436,14 +424,11 @@ class QueryTraits(object):
     def __len__(self):
         return self.count()
 
-    def get(self):
+    def get(self, *args, **kwargs):
         result = self[:1]
         if result:
             return result[0]
-        return None
-
-    def fetch(self, limit=301):
-        return self[:limit]
+        raise ObjectDoesNotExist
 
 class RelationIndexQuery(QueryTraits):
     """Combines the results of multiple queries by appending the queries in the
@@ -461,10 +446,10 @@ class RelationIndexQuery(QueryTraits):
         self.query = self.query.filter(*args, **kwargs)
 
     def __getitem__(self, index):
-        keys = [key.parent() for key in self.query[index]]
+        pks = [instance.pk for instance in self.query[index]]
         if self.keys_only:
-            return keys
-        return [item for item in self.model.get(keys) if item]
+            return pks
+        return [item for item in self.model.objects.filter(pk__in=pks) if item]
 
-    def count(self, max=301):
-        return self.query.count(max)
+    def count(self):
+        return self.query.count()

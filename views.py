@@ -10,7 +10,7 @@ def update_relation_index(request):
         model_descriptor = pickle.loads(base64.b64decode(request.POST[
             'model_descriptor']))
         model = models.get_model(model_descriptor[0], model_descriptor[1])
-        update_property = getattr(model, request.POST['property_name'])
+        update_property = model._meta.get_field_by_name(request.POST['property_name'])[0]
         parent_key = pickle.loads(base64.b64decode(request.POST['parent_key']))
         delete = pickle.loads(base64.b64decode(request.POST['delete']))
         update_property.update_relation_index(parent_key, delete)
