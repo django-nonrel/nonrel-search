@@ -3,8 +3,8 @@ from google.appengine.api import apiproxy_stub_map
 from google.appengine.ext import db
 from django.core.urlresolvers import resolve
 from django.http import HttpRequest, QueryDict
-from ragendja.testutils import ModelTestCase
-from search.core import SearchIndexProperty
+from django.test import TestCase
+from search.core import SearchIndexField
 import base64
 
 class Indexed(db.Model):
@@ -28,7 +28,7 @@ def run_tasks():
         view(request)
         stub.DeleteTask('default', task['name'])
 
-class TestIndexed(ModelTestCase):
+class TestIndexed(TestCase):
     model = Indexed.value_index._relation_index_model
 
     def setUp(self):
