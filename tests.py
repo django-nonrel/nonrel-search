@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 from google.appengine.api import apiproxy_stub_map
-from google.appengine.ext import db
+from django.db import models
 from django.core.urlresolvers import resolve
 from django.http import HttpRequest, QueryDict
 from django.test import TestCase
 from search.core import SearchIndexField
 import base64
 
-class Indexed(db.Model):
+class Indexed(models.Model):
     # Test normal and prefix index
-    one = db.StringProperty()
-    two = db.StringProperty()
+    one = models.CharField(max_length=500)
+    two = models.CharField(max_length=500)
     one_two_index = SearchIndexField(('one', 'two'))
-    check = db.BooleanProperty()
+    check = models.BooleanField()
 
     # Test relation index
-    value = db.StringProperty()
+    value = models.CharField(max_length=500)
     value_index = SearchIndexField('value', integrate=('one', 'check'))
 
 def run_tasks():
@@ -29,20 +29,20 @@ def run_tasks():
         stub.DeleteTask('default', task['name'])
 
 class TestIndexed(TestCase):
-    model = Indexed.value_index._relation_index_model
+    model = Indexed._meta.get_field_by_name('value_index')[0]._relation_index_model
 
     def setUp(self):
         apiproxy_stub_map.apiproxy.GetStub('taskqueue').FlushQueue('default')
 
         for i in range(3):
-            Indexed(one=u'OneOne%d' % i).put()
+            Indexed(one=u'OneOne%d' % i).save()
 
         for i in range(3):
-            Indexed(one=u'one%d' % i, two='two%d' % i).put()
+            Indexed(one=u'one%d' % i, two='two%d' % i).save()
 
         for i in range(3):
             Indexed(one=(None, u'ÜÄÖ-+!#><|', 'blub')[i],
-                    check=bool(i%2), value=u'value%d test-word' % i).put()
+                    check=bool(i%2), value=u'value%d test-word' % i).save()
         run_tasks()
 
     def test_setup(self):
@@ -52,7 +52,7 @@ class TestIndexed(TestCase):
 
         self.assertEqual(len(Indexed.value_index.search('word')), 3)
         self.assertEqual(len(Indexed.value_index.search('test-word')), 3)
-        
+
         self.assertEqual(len(Indexed.value_index.search('value0',
             filters=('check =', False))), 1)
         self.assertEqual(len(Indexed.value_index.search('value1',
@@ -63,10 +63,10 @@ class TestIndexed(TestCase):
     def test_change(self):
         value = Indexed.value_index.search('value0').get()
         value.value = 'value1 test-word'
-        value.put()
+        value.save()
         value.one = 'shidori'
         value.value = 'value3 rasengan/shidori'
-        value.put()
+        value.save()
         run_tasks()
         self.assertEqual(len(Indexed.value_index.search('rasengan')), 1)
         self.assertEqual(len(Indexed.value_index.search('value3')), 1)
@@ -75,5 +75,3 @@ class TestIndexed(TestCase):
         value.delete()
         run_tasks()
         self.assertEqual(len(Indexed.value_index.search('value3')), 0)
-
-

@@ -87,10 +87,10 @@ def default_splitter(text, indexing=False, **kwargs):
     """
     Returns an array of  keywords, that are included
     in query. All character besides of letters, numbers
-    and '_' are split characters. The character '-' is a special 
+    and '_' are split characters. The character '-' is a special
     case: two words separated by '-' create an additional keyword
     consisting of both words without separation (see example).
-    
+
     Examples:
     - text='word1/word2 word3'
       returns ['word1', 'word2', word3]
@@ -133,7 +133,7 @@ class DictEmu(object):
 class StringListField(ListField):
     def __init__(self, *args, **kwargs):
         # TODO: provide some property in the settings which tells us which
-        # model field to use for field type in order to let other backends 
+        # model field to use for field type in order to let other backends
         # use other max_lengts,...
         self.field_type = models.CharField(max_length=500)
         super(ListField, self).__init__(*args, **kwargs)
@@ -153,7 +153,7 @@ class SearchableListField(StringListField):
     def filter(self, values, filters={}, keys_only=False):
         """Returns a query for the given values (creates '=' filters for this
         property and additionally applies filters."""
-        
+
         if not isinstance(values, (tuple, list)):
             values = (values,)
 #        if keys_only:
@@ -249,23 +249,23 @@ class SearchIndexField(SearchableListField):
             index = model.objects.get(pk=parent_key)
         except ObjectDoesNotExist:
             index = None
-        
+
         if not delete:
             try:
                 parent = self.model_class.objects.get(pk=parent_key)
             except ObjectDoesNotExist:
                 parent = None
-            
+
             values = None
             if parent:
                 values = self.get_index_values(parent)
-        
+
         # Remove index if it's not needed, anymore
         if delete or not self.should_index(values):
             if index:
                 index.delete()
             return
-        
+
         # Update/create index
         if not index:
             index = model(pk=parent_key, **values)
@@ -277,7 +277,7 @@ class SearchIndexField(SearchableListField):
         index.save()
 
     def create_index_model(self):
-        attrs = dict()
+        attrs = dict(__module__=self.__module__)
         # By default we integrate everything when using relation index
         if self.relation_index and self.integrate == ('*',):
             self.integrate = tuple(field.name
@@ -344,11 +344,11 @@ class SearchIndexField(SearchableListField):
         if self.filters and not self.should_index(DictEmu(model_instance)) \
                 or self.relation_index:
             return []
-        
+
         language = self.language
         if callable(language):
             language = language(model_instance, property=self)
-        
+
         index = []
         for field in self.fields_to_index:
             values = getattr_by_path(model_instance, field, None)
