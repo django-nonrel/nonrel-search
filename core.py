@@ -1,14 +1,15 @@
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.core.urlresolvers import reverse
 from django.db import models
 from django.db.models import signals
+from django.db.transaction import commit_locked
 from djangotoolbox.fields import ListField
 from djangotoolbox.utils import getattr_by_path
 try:
     from google.appengine.api.taskqueue import Task
 except:
     from google.appengine.api.labs.taskqueue import Task
-from ragendja.dbutils import get_filters, transaction
 from copy import copy
 import re
 import string
@@ -145,8 +146,8 @@ class StringListField(ListField):
 
     def contribute_to_class(self, cls, name):
         # XXX: Use contribute_to_class in order to add the model_class to the field
-        super(StringListField, self).contribute_to_class(cls, name)
         self.model_class = cls
+        super(StringListField, self).contribute_to_class(cls, name)
 
 # TODO: keys_only is to app engine specific, there should be a way to refactore
 # this out into the backend,
@@ -168,7 +169,7 @@ class SearchableListField(StringListField):
 #            filtered = self.model_class.all()
         filtered = self.model_class.objects.all()
         for value in set(values):
-            filter = {self.name + ' =':value}
+            filter = {self.name:value}
             filtered = filtered.filter(**filter)
         filtered = filtered.filter(**filters)
         return filtered
@@ -188,7 +189,7 @@ class SearchableListField(StringListField):
         # Don't allow empty queries
         if not words and query:
             # This query will never find anything
-            return self.filter((), filters={self.name + ' =':' '},
+            return self.filter((), filters={self.name:' '},
                                keys_only=keys_only)
         return self.filter(sorted(words), filters,
                            keys_only=keys_only)
@@ -204,18 +205,19 @@ class SearchIndexField(SearchableListField):
 
     With "filters" you can specify when a values index should be created.
     """
+    # TODO: Refactor default_search_queue out into the backend
     default_search_queue = getattr(settings, 'DEFAULT_SEARCH_QUEUE', 'default')
 
-    def __init__(self, fields, indexer=None, splitter=default_splitter,
+    def __init__(self, fields_to_index, indexer=None, splitter=default_splitter,
             relation_index=True, integrate='*', filters={},
             language=site_language, **kwargs):
         if integrate is None:
             integrate = ()
         if integrate == '*' and not relation_index:
             integrate = ()
-        if isinstance(fields, basestring):
-            fields = (fields,)
-        self.properties = fields
+        if isinstance(fields_to_index, basestring):
+            fields_to_index = (fields_to_index,)
+        self.fields_to_index = fields_to_index
         if isinstance(integrate, basestring):
             integrate = (integrate,)
         self.filters = filters
@@ -224,43 +226,50 @@ class SearchIndexField(SearchableListField):
         self.indexer = indexer
         self.language = language
         self.relation_index = relation_index
-        if len(fields) == 0:
+        if len(fields_to_index) == 0:
             raise ValueError('No fields specified for index!')
         super(SearchIndexField, self).__init__(**kwargs)
 
     def should_index(self, values):
         # Check if filter doesn't match
         for filter, value in self.filters.items():
-            # TODO: attr, oop has to be retrieved differently because we cannot
-            # longer assume that the operator is seperated by a space from the attr
-            # see how django solves this
-            attr, op = filter.split(' ')
+            attr, op = filter, 'exact'
+            if '__' in filter:
+                attr, op = filter.rsplit('__', 1)
             op = op.lower()
-            if (op == '=' and values[attr] != value or
-                    op == '!=' and values[attr] == value or
+            if (op == 'exact' and values[attr] != value or
+#                    op == '!=' and values[attr] == value or
                     op == 'in' and values[attr] not in value or
-                    op == '<' and values[attr] >= value or
-                    op == '<=' and values[attr] > value or
-                    op == '>' and values[attr] <= value or
-                    op == '>=' and values[attr] < value):
+                    op == 'lt' and values[attr] >= value or
+                    op == 'lte' and values[attr] > value or
+                    op == 'gt' and values[attr] <= value or
+                    op == 'gte' and values[attr] < value):
                 return False
-            elif op not in ('=', '!=', 'in', '<', '<=', '>=', '>'):
+            elif op not in ('exact', 'in', 'lt', 'lte', 'gte', 'gt'):
                 raise ValueError('Invalid search index filter: %s %s' % (filter, value))
         return True
 
-    @transaction
+#    @commit_locked
     def update_relation_index(self, parent_key, delete=False):
         model = self._relation_index_model
         
         # Generate key name (at most 250 chars)
-        key_name = u'k' + unicode(parent_key.id_or_name())
-        if len(key_name) > 250:
-            key_name = key_name[:250]
+        pk = unicode(parent_key)
+        if len(pk) > 250:
+            pk = pk[:250]
         
-        index = model.get_by_key_name(key_name, parent=parent_key)
+#        index = model.get_by_key_name(key_name, parent=parent_key)
+        try:
+            index = model.objects.get(pk=pk)
+        except ObjectDoesNotExist:
+            index = None
         
         if not delete:
-            parent = self.model_class.get(parent_key)
+            try:
+                parent = self.model_class.objects.get(pk=parent_key)
+            except ObjectDoesNotExist:
+                parent = None
+            
             values = None
             if parent:
                 values = self.get_index_values(parent)
@@ -273,72 +282,81 @@ class SearchIndexField(SearchableListField):
         
         # Update/create index
         if not index:
-            index = model(key_name=key_name, parent=parent_key, **values)
+            index = model(pk=pk, **values)
 
         # This guarantees that we also set virtual @properties
         for key, value in values.items():
             setattr(index, key, value)
 
-        index.put()
+        index.save()
 
     def create_index_model(self):
+        # TODO:what's MODEL_NAME???
         attrs = dict(MODEL_NAME=self.model_class._meta.object_name,
                      PROPERTY_NAME=self.name)
         # By default we integrate everything when using relation index
         if self.relation_index and self.integrate == ('*',):
-            self.integrate = tuple(property.name
-                                   for property in self.model_class._meta.fields
-                                   if not isinstance(property, SearchIndexField))
+            self.integrate = tuple(field.name
+                                   for field in self.model_class._meta.fields
+                                   if not isinstance(field, SearchIndexField))
 
-        for property_name in self.integrate:
-            property = getattr(self.model_class, property_name)
-            property = copy(property)
-            attrs[property_name] = property
-            if hasattr(property, 'collection_name'):
-                attrs[property_name].collection_name = '_sidx_%s_%s_set_' % (
+        for field_name in self.integrate:
+            field = self.model_class._meta.get_field_by_name(field_name)[0]
+            field = copy(field)
+            attrs[field_name] = field
+            if hasattr(field, 'related_name'):
+                attrs[field_name].related_name = '_sidx_%s_%s_set_' % (
                     self.model_class._meta.object_name.lower(),
                     self.name,
                 )
         index_name = self.name
-        attrs[index_name] = SearchIndexField(self.properties,
+        attrs[index_name] = SearchIndexField(self.fields_to_index,
             splitter=self.splitter, indexer=self.indexer,
             language=self.language, relation_index=False)
         if self.relation_index:
             owner = self
-            def __init__(self, parent, *args, **kwargs):
+            def __init__(self, *args, **kwargs):
                 # Save some space: don't copy the whole indexed text into the
                 # relation index property unless the property gets integrated.
+                field_names = [field.name for field in self._meta.fields]
+                owner_field_names = [field.name
+                                     for field in owner.model_class._meta.fields]
                 for key, value in kwargs.items():
-                    if key in self.properties() or \
-                            key not in owner.model_class.properties():
+                    if key in field_names or key not in owner_field_names:
                         continue
                     setattr(self, key, value)
                     del kwargs[key]
-                db.Model.__init__(self, parent=parent, *args, **kwargs)
+                models.Model.__init__(self, *args, **kwargs)
             attrs['__init__'] = __init__
             self._relation_index_model = type(
                 'RelationIndex__%s_%s__%s' % (self.model_class._meta.app_label,
                                            self.model_class._meta.object_name,
                                            self.name),
-                (db.Model,), attrs)
+                (models.Model,), attrs)
 
     def get_index_values(self, model_instance):
-        filters = tuple([f[0].split(' ')[0]
-                         for f in get_filters(*self.filters)])
-        values = {}
-        for property in set(self.properties + self.integrate + filters):
-            instance = getattr(model_instance.__class__, property)
-            if isinstance(instance, db.ReferenceProperty):
-                value = instance.get_value_for_datastore(model_instance)
+        filters = []
+        for filter in self.filters.keys():
+            if '__' in filter:
+                filters.append(filter.rsplit('__')[0])
             else:
-                value = getattr(model_instance, property)
-            if property == self.properties[0] and \
+                filters.append(filter)
+        filters = tuple(filters)
+        values = {}
+        for field_name in set(self.fields_to_index + self.integrate + filters):
+            instance = self.model_class._meta.get_field_by_name(field_name)[0]
+            # TODO: ???
+            if isinstance(instance, models.ForeignKey):
+                value = instance.pre_save(model_instance, False)
+            else:
+                value = getattr(model_instance, field_name)
+            if field_name == self.fields_to_index[0] and \
                     isinstance(value, (list, tuple)):
                 value = sorted(value)
-            values[property] = value
+            values[field_name] = value
         return values
 
-    def get_value_for_datastore(self, model_instance):
+    def pre_save(self, model_instance, add):
         if self.filters and not self.should_index(DictEmu(model_instance)) \
                 or self.relation_index:
             return []
@@ -348,8 +366,8 @@ class SearchIndexField(SearchableListField):
             language = language(model_instance, property=self)
         
         index = []
-        for property in self.properties:
-            values = getattr_by_path(model_instance, property, None)
+        for field in self.fields_to_index:
+            values = getattr_by_path(model_instance, field, None)
             if not values:
                 values = ()
             elif not isinstance(values, (list, tuple)):
@@ -361,9 +379,6 @@ class SearchIndexField(SearchableListField):
         # Sort index to make debugging easier
         setattr(model_instance, self.name, sorted(set(index)))
         return index
-
-    def make_value_from_datastore(self, value):
-        return value
 
     def search(self, query, filters={},
                language=settings.LANGUAGE_CODE, keys_only=False):
@@ -378,6 +393,7 @@ class SearchIndexField(SearchableListField):
 
 def push_update_relation_index(model_descriptor, property_name, parent_key,
         delete):
+    # TODO: call abstract background task api, for app engine use defered library
     Task(url=reverse('search.views.update_relation_index'),  method='POST',
         params={
             'property_name': property_name,
@@ -387,37 +403,30 @@ def push_update_relation_index(model_descriptor, property_name, parent_key,
         }).add(SearchIndexField.default_search_queue)
 
 def post(delete, sender, instance, **kwargs):
-    for property in sender._meta.fields:
-        if isinstance(property, SearchIndexField):
-            if property.relation_index:
-                if delete:
-                    parent_key = instance._rel_idx_key_
-                else:
-                  parent_key = instance.key()
+    for field in sender._meta.fields:
+        if isinstance(field, SearchIndexField):
+            if field.relation_index:
+                parent_key = instance.pk
                 push_update_relation_index([sender._meta.app_label,
-                    sender._meta.object_name], property.name, parent_key, delete)
+                    sender._meta.object_name], field.name, parent_key, delete)
 
-def pre_delete(sender, instance, **kwargs):
-    instance._rel_idx_key_ = instance.key()
-
-def post_save_committed(sender, instance, **kwargs):
+def post_save(sender, instance, **kwargs):
     # Update indexes after transaction
     post(False, sender, instance, **kwargs)
 
-def post_delete_committed(sender, instance, **kwargs):
+def post_delete(sender, instance, **kwargs):
     # Update indexes after transaction
     post(True, sender, instance, **kwargs)
 
 def install_index_model(sender, **kwargs):
     needs_relation_index = False
-    for property in sender._meta.fields:
-        if isinstance(property, SearchIndexField) and property.relation_index:
-            property.create_index_model()
+    for field in sender._meta.fields:
+        if isinstance(field, SearchIndexField) and field.relation_index:
+            field.create_index_model()
             needs_relation_index = True
     if needs_relation_index:
-        signals.post_save_committed.connect(post_save_committed, sender=sender)
-        signals.pre_delete.connect(pre_delete, sender=sender)
-        signals.post_delete_committed.connect(post_delete_committed, sender=sender)
+        signals.post_save.connect(post_save, sender=sender)
+        signals.post_delete.connect(post_delete, sender=sender)
 signals.class_prepared.connect(install_index_model)
 
 class QueryTraits(object):

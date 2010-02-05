@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
-from appenginepatcher import on_production_server
 from django.db import models
 from django.http import HttpResponse
-from google.appengine.api import users
 import base64
 import cPickle as pickle
 
