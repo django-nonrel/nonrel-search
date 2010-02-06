@@ -9,7 +9,7 @@ import base64
 
 class Indexed(models.Model):
     # Test normal and prefix index
-    one = models.CharField(max_length=500)
+    one = models.CharField(max_length=500, null=True)
     two = models.CharField(max_length=500)
     one_two_index = SearchIndexField(('one', 'two'))
     check = models.BooleanField()
@@ -46,32 +46,36 @@ class TestIndexed(TestCase):
         run_tasks()
 
     def test_setup(self):
-        self.assertEqual(len(Indexed.one_two_index.search('one2')), 1)
-        self.assertEqual(len(Indexed.one_two_index.search('two')), 0)
-        self.assertEqual(len(Indexed.one_two_index.search('two1')), 1)
+        value_index = Indexed._meta.get_field_by_name('value_index')[0]
+        one_two_index = value_index = Indexed._meta.get_field_by_name(
+            'one_two_index')[0]
+        self.assertEqual(len(one_two_index.search('one2')), 1)
+        self.assertEqual(len(one_two_index.search('two')), 0)
+        self.assertEqual(len(one_two_index.search('two1')), 1)
 
-        self.assertEqual(len(Indexed.value_index.search('word')), 3)
-        self.assertEqual(len(Indexed.value_index.search('test-word')), 3)
+        self.assertEqual(len(value_index.search('word')), 3)
+        self.assertEqual(len(value_index.search('test-word')), 3)
 
-        self.assertEqual(len(Indexed.value_index.search('value0',
+        self.assertEqual(len(value_index.search('value0',
             filters=('check =', False))), 1)
-        self.assertEqual(len(Indexed.value_index.search('value1',
+        self.assertEqual(len(value_index.search('value1',
             filters=('check =', True, 'one =', u'ÜÄÖ-+!#><|'))), 1)
-        self.assertEqual(len(Indexed.value_index.search('value2',
+        self.assertEqual(len(value_index.search('value2',
             filters=('check =', False, 'one =', 'blub'))), 1)
 
     def test_change(self):
-        value = Indexed.value_index.search('value0').get()
+        index = Indexed._meta.get_field_by_name('value_index')[0]
+        value = index.search('value0').get()
         value.value = 'value1 test-word'
         value.save()
         value.one = 'shidori'
         value.value = 'value3 rasengan/shidori'
         value.save()
         run_tasks()
-        self.assertEqual(len(Indexed.value_index.search('rasengan')), 1)
-        self.assertEqual(len(Indexed.value_index.search('value3')), 1)
+        self.assertEqual(len(index.search('rasengan')), 1)
+        self.assertEqual(len(index.search('value3')), 1)
 
-        value = Indexed.value_index.search('value3').get()
+        value = index.search('value3').get()
         value.delete()
         run_tasks()
-        self.assertEqual(len(Indexed.value_index.search('value3')), 0)
+        self.assertEqual(len(index.search('value3')), 0)

@@ -8,5 +8,5 @@ urlpatterns = patterns('search.tests',
         (r'^bg-tasks/search/update_relation_index/$', 'update_relation_index'),
     )
 #  + patterns('',
-#      (r'^search/', include('search.urlsauto')),
+#      (r'^search/', include('search.urls')),
 #    )

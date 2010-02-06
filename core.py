@@ -367,8 +367,8 @@ class SearchIndexField(SearchableListField):
     def search(self, query, filters={},
                language=settings.LANGUAGE_CODE, keys_only=False):
         if self.relation_index:
-            items = getattr(self._relation_index_model, self.name).search(query,
-                filters, language=language,
+            items = self._relation_index_model._meta.get_field_by_name(
+                self.name)[0].search(query, filters, language=language,
                 keys_only=True)
             # TODO: Add support for values('pk') to the app engine backend
 #            items = getattr(self._relation_index_model, self.name).search(query,
