@@ -57,11 +57,11 @@ class TestIndexed(TestCase):
         self.assertEqual(len(value_index.search('test-word')), 3)
 
         self.assertEqual(len(value_index.search('value0',
-            filters=('check =', False))), 1)
+            filters={'check':False})), 1)
         self.assertEqual(len(value_index.search('value1',
-            filters=('check =', True, 'one =', u'ÜÄÖ-+!#><|'))), 1)
+            filters={'check':True, 'one':u'ÜÄÖ-+!#><|'})), 1)
         self.assertEqual(len(value_index.search('value2',
-            filters=('check =', False, 'one =', 'blub'))), 1)
+            filters={'check__exact':False, 'one':'blub'})), 1)
 
     def test_change(self):
         index = Indexed._meta.get_field_by_name('value_index')[0]
