@@ -4,7 +4,7 @@ from django.db import models
 from django.core.urlresolvers import resolve
 from django.http import HttpRequest, QueryDict
 from django.test import TestCase
-from search.core import SearchIndexField
+from search.core import SearchIndexField, DictEmu
 import base64
 
 class Indexed(models.Model):
@@ -47,8 +47,8 @@ class TestIndexed(TestCase):
 
     def test_setup(self):
         value_index = Indexed._meta.get_field_by_name('value_index')[0]
-        one_two_index = value_index = Indexed._meta.get_field_by_name(
-            'one_two_index')[0]
+        one_two_index = Indexed._meta.get_field_by_name('one_two_index')[0]
+        
         self.assertEqual(len(one_two_index.search('one2')), 1)
         self.assertEqual(len(one_two_index.search('two')), 0)
         self.assertEqual(len(one_two_index.search('two1')), 1)
