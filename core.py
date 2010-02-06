@@ -135,8 +135,8 @@ class StringListField(ListField):
         # TODO: provide some property in the settings which tells us which
         # model field to use for field type in order to let other backends
         # use other max_lengts,...
-        self.field_type = models.CharField(max_length=500)
-        super(ListField, self).__init__(*args, **kwargs)
+        kwargs['field_type'] = models.CharField(max_length=500)
+        super(StringListField, self).__init__(*args, **kwargs)
 
     def contribute_to_class(self, cls, name):
         # XXX: Use contribute_to_class in order to add the model_class to the field
@@ -310,6 +310,7 @@ class SearchIndexField(SearchableListField):
                         continue
                     setattr(self, key, value)
                     del kwargs[key]
+                # TODO: shouldn't we use here super or something like this?
                 models.Model.__init__(self, *args, **kwargs)
             attrs['__init__'] = __init__
             self._relation_index_model = type(
@@ -372,12 +373,11 @@ class SearchIndexField(SearchableListField):
                 keys_only=True)
             # TODO: Add support for values('pk') to the app engine backend
 #            items = getattr(self._relation_index_model, self.name).search(query,
-#                filters, language=language,
-#                keys_only=True).values('pk')
+#                filters, language=language).values('pk')
             return RelationIndexQuery(self, items, keys_only=keys_only)
         return super(SearchIndexField, self).search(query, filters,
-            splitter=self.splitter,
-            indexer=self.indexer, language=language, keys_only=keys_only)
+            splitter=self.splitter, indexer=self.indexer, language=language,
+            keys_only=keys_only)
 
 def push_update_relation_index(model_descriptor, property_name, parent_key,
         delete):
