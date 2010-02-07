@@ -143,7 +143,7 @@ class StringListField(ListField):
         self.model_class = cls
         super(StringListField, self).contribute_to_class(cls, name)
 
-# TODO: keys_only is to app engine specific, use .values('pk') instead
+# TODO: keys_only is too app engine specific, use .values('pk') instead
 # filters should be some function in order to support django's exlude functionality,
 # Q-objects, ...
 class SearchableListField(StringListField):
@@ -187,6 +187,8 @@ class SearchableListField(StringListField):
         return self.filter(sorted(words), filters,
                            keys_only=keys_only)
 
+# TODO: Provide some mechanism to access the SearchIndexField from the model
+# without calling get_field_by_name method
 class SearchIndexField(SearchableListField):
     """
     Simple full-text index for the given fields.
@@ -330,7 +332,6 @@ class SearchIndexField(SearchableListField):
         values = {}
         for field_name in set(self.fields_to_index + self.integrate + filters):
             instance = self.model_class._meta.get_field_by_name(field_name)[0]
-            # TODO: ???
             if isinstance(instance, models.ForeignKey):
                 value = instance.pre_save(model_instance, False)
             else:
@@ -394,9 +395,8 @@ def post(delete, sender, instance, **kwargs):
     for field in sender._meta.fields:
         if isinstance(field, SearchIndexField):
             if field.relation_index:
-                parent_key = instance.pk
                 push_update_relation_index([sender._meta.app_label,
-                    sender._meta.object_name], field.name, parent_key, delete)
+                    sender._meta.object_name], field.name, instance.pk, delete)
 
 def post_save(sender, instance, **kwargs):
     # Update indexes after transaction
@@ -417,6 +417,7 @@ def install_index_model(sender, **kwargs):
         signals.post_delete.connect(post_delete, sender=sender)
 signals.class_prepared.connect(install_index_model)
 
+# TODO: Refactor QueryTraits using Djangos QuerySet
 class QueryTraits(object):
     def __iter__(self):
         return iter(self[:301])

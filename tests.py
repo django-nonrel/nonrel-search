@@ -4,7 +4,7 @@ from django.db import models
 from django.core.urlresolvers import resolve
 from django.http import HttpRequest, QueryDict
 from django.test import TestCase
-from search.core import SearchIndexField, DictEmu
+from search.core import SearchIndexField
 import base64
 
 class Indexed(models.Model):
