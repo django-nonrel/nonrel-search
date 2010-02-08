@@ -366,6 +366,17 @@ class SearchIndexField(SearchableListField):
         setattr(model_instance, self.name, sorted(set(index)))
         return index
 
+    def contribute_to_class(self, cls, name):
+        attrs = dict(__module__=self.__module__)
+        attrs[name] = self
+        if not hasattr(cls, 'indexes'):
+            IndexManager = type('Indexes', (models.Manager, ), attrs)
+            setattr(cls, 'indexes', IndexManager())
+        else:
+            index_manager = getattr(cls, 'indexes')
+            setattr(index_manager, name, self)
+        super(SearchIndexField, self).contribute_to_class(cls, name)
+
     def search(self, query, filters={},
                language=settings.LANGUAGE_CODE, keys_only=False):
         if self.relation_index:
