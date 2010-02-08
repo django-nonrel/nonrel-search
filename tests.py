@@ -46,35 +46,35 @@ class TestIndexed(TestCase):
         run_tasks()
 
     def test_setup(self):
-        self.assertEqual(len(Indexed.indexes.one_two_index.search('one2')), 1)
-        self.assertEqual(len(Indexed.indexes.one_two_index.search('two')), 0)
-        self.assertEqual(len(Indexed.indexes.one_two_index.search('two1')), 1)
+        self.assertEqual(len(Indexed.one_two_index.search('one2')), 1)
+        self.assertEqual(len(Indexed.one_two_index.search('two')), 0)
+        self.assertEqual(len(Indexed.one_two_index.search('two1')), 1)
 
         # test against empty list because a relation index is used
-        self.assertEqual(Indexed.indexes.value_index.search('word').get().value_index, [])
+        self.assertEqual(Indexed.value_index.search('word').get().value_index, [])
             
-        self.assertEqual(len(Indexed.indexes.value_index.search('word')), 3)
-        self.assertEqual(len(Indexed.indexes.value_index.search('test-word')), 3)
+        self.assertEqual(len(Indexed.value_index.search('word')), 3)
+        self.assertEqual(len(Indexed.value_index.search('test-word')), 3)
 
-        self.assertEqual(len(Indexed.indexes.value_index.search('value0',
+        self.assertEqual(len(Indexed.value_index.search('value0',
             filters={'check':False})), 1)
-        self.assertEqual(len(Indexed.indexes.value_index.search('value1',
+        self.assertEqual(len(Indexed.value_index.search('value1',
             filters={'check':True, 'one':u'ÜÄÖ-+!#><|'})), 1)
-        self.assertEqual(len(Indexed.indexes.value_index.search('value2',
+        self.assertEqual(len(Indexed.value_index.search('value2',
             filters={'check__exact':False, 'one':'blub'})), 1)
 
     def test_change(self):
-        value = Indexed.indexes.value_index.search('value0').get()
+        value = Indexed.value_index.search('value0').get()
         value.value = 'value1 test-word'
         value.save()
         value.one = 'shidori'
         value.value = 'value3 rasengan/shidori'
         value.save()
         run_tasks()
-        self.assertEqual(len(Indexed.indexes.value_index.search('rasengan')), 1)
-        self.assertEqual(len(Indexed.indexes.value_index.search('value3')), 1)
+        self.assertEqual(len(Indexed.value_index.search('rasengan')), 1)
+        self.assertEqual(len(Indexed.value_index.search('value3')), 1)
 
-        value = Indexed.indexes.value_index.search('value3').get()
+        value = Indexed.value_index.search('value3').get()
         value.delete()
         run_tasks()
-        self.assertEqual(len(Indexed.indexes.value_index.search('value3')), 0)
+        self.assertEqual(len(Indexed.value_index.search('value3')), 0)

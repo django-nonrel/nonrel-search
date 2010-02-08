@@ -365,14 +365,12 @@ class SearchIndexField(SearchableListField):
         return index
 
     def contribute_to_class(self, cls, name):
-        attrs = dict(__module__=self.__module__)
-        attrs[name] = self
-        if not hasattr(cls, 'indexes'):
-            IndexManager = type('Indexes', (models.Manager, ), attrs)
-            setattr(cls, 'indexes', IndexManager())
-        else:
-            index_manager = getattr(cls, 'indexes')
-            setattr(index_manager, name, self)
+        attrs = {name:self}
+        def search(self, query, filters={}, language=settings.LANGUAGE_CODE,
+                keys_only=False):
+            return attrs[name].search(query, filters, language, keys_only)
+        attrs['search'] = search
+        setattr(cls, name, type('Indexes', (models.Manager, ), attrs)())
         super(SearchIndexField, self).contribute_to_class(cls, name)
 
     def search(self, query, filters={},
