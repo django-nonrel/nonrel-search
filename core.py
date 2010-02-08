@@ -187,8 +187,6 @@ class SearchableListField(StringListField):
         return self.filter(sorted(words), filters,
                            keys_only=keys_only)
 
-# TODO: Provide some mechanism to access the SearchIndexField from the model
-# without calling get_field_by_name method
 class SearchIndexField(SearchableListField):
     """
     Simple full-text index for the given fields.
