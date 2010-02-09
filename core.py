@@ -1,20 +1,13 @@
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
-from django.core.urlresolvers import reverse
 from django.db import models
 from django.db.models import signals
 #from django.db.transaction import commit_locked
 from djangotoolbox.fields import ListField
 from djangotoolbox.utils import getattr_by_path
-try:
-    from google.appengine.api.taskqueue import Task
-except:
-    from google.appengine.api.labs.taskqueue import Task
 from copy import copy
 import re
 import string
-import base64
-import cPickle as pickle
 
 _PUNCTUATION_REGEX = re.compile(
     '[' + re.escape(string.punctuation.replace('-', '').replace(
@@ -198,9 +191,6 @@ class SearchIndexField(SearchableListField):
 
     With "filters" you can specify when a values index should be created.
     """
-    # TODO: Refactor default_search_queue out into the backend
-    default_search_queue = getattr(settings, 'DEFAULT_SEARCH_QUEUE', 'default')
-
     def __init__(self, fields_to_index, indexer=None, splitter=default_splitter,
             relation_index=True, integrate='*', filters={},
             language=site_language, **kwargs):
@@ -389,14 +379,14 @@ class SearchIndexField(SearchableListField):
 
 def push_update_relation_index(model_descriptor, property_name, parent_key,
         delete):
-    # TODO: call abstract background task api, for app engine use defered library
-    Task(url=reverse('search.views.update_relation_index'),  method='POST',
-        params={
-            'property_name': property_name,
-            'model_descriptor': base64.b64encode(pickle.dumps(model_descriptor)),
-            'parent_key':base64.b64encode(pickle.dumps(parent_key)),
-            'delete':base64.b64encode(pickle.dumps(delete)),
-        }).add(SearchIndexField.default_search_queue)
+    # TODO: replace this with a abstract background task api call
+    backend = getattr(settings, 'BACKEND', 'search.backends.appengine')
+    import_list = []
+    if '.' in backend:
+        import_list = [backend.rsplit('.', 1)[1]]
+    backend = __import__(backend, globals(), locals(), import_list)
+    backend.update_relation_index(model_descriptor, property_name, parent_key,
+        delete)
 
 def post(delete, sender, instance, **kwargs):
     for field in sender._meta.fields:
