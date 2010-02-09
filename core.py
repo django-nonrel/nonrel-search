@@ -377,14 +377,17 @@ class SearchIndexField(SearchableListField):
             splitter=self.splitter, indexer=self.indexer, language=language,
             keys_only=keys_only)
 
-def push_update_relation_index(model_descriptor, property_name, parent_key,
-        delete):
-    # TODO: replace this with a abstract background task api call
+def load_backend():
     backend = getattr(settings, 'BACKEND', 'search.backends.appengine')
     import_list = []
     if '.' in backend:
         import_list = [backend.rsplit('.', 1)[1]]
-    backend = __import__(backend, globals(), locals(), import_list)
+    return __import__(backend, globals(), locals(), import_list)
+
+def push_update_relation_index(model_descriptor, property_name, parent_key,
+        delete):
+    # TODO: replace this with a abstract background task api call
+    backend = load_backend()
     backend.update_relation_index(model_descriptor, property_name, parent_key,
         delete)
 
