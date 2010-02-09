@@ -143,6 +143,8 @@ class SearchableListField(StringListField):
     """
     This is basically a string ListField with search support.
     """
+    # TODO: filters can be removed because we can add filters after or before
+    # calling search
     def filter(self, values, filters={}, keys_only=False):
         """Returns a query for the given values (creates '=' filters for this
         property and additionally applies filters."""
