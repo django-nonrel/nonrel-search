@@ -1,4 +1,4 @@
-from django.conf import settings
+﻿from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models import signals
@@ -17,6 +17,18 @@ _PUNCTUATION_SEARCH_REGEX = re.compile(
         '#', '')) + ']')
 
 # Various base indexers
+def startswith(words, indexing, **kwargs):
+    """Allows for word prefix search."""
+    if not indexing:
+        # In search mode we simply match search terms exactly
+        return words
+    # In indexing mode we add all prefixes ('h', 'he', ..., 'hello')
+    result = []
+    for word in words:
+        result.extend([word[:count].strip(u'-')
+                       for count in range(1, len(word)+1)])
+    return result
+
 def porter_stemmer(words, language, **kwargs):
     """Porter-stemmer in various languages."""
     languages = [language,]
