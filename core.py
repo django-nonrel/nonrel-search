@@ -444,7 +444,8 @@ class RelationIndexQuery(QueryTraits):
         self.query = self.query.filter(*args, **kwargs)
 
     def __getitem__(self, index):
-        pks = [instance['pk'] for instance in self.query[index]]
+        pks = [instance.pk if isinstance(instance, models.Model) else instance['pk']
+                for instance in self.query[index]]
         return [item for item in self.model.objects.filter(pk__in=pks) if item]
 
     def count(self):
