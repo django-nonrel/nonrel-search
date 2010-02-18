@@ -1,4 +1,4 @@
-from django.conf import settings
+﻿from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models import signals
@@ -148,25 +148,20 @@ class StringListField(ListField):
         self.model_class = cls
         super(StringListField, self).contribute_to_class(cls, name)
 
-# TODO: keys_only is too app engine specific, use .values('pk') instead
-# filters should be some function in order to support django's exlude functionality,
-# Q-objects, ...
+# TODO: filters should be some function in order to support django's exlude
+# functionality, Q-objects, ...
 class SearchableListField(StringListField):
     """
     This is basically a string ListField with search support.
     """
     # TODO: filters can be removed because we can add filters after or before
     # calling search
-    def filter(self, values, filters={}, keys_only=False):
+    def filter(self, values, filters={}):
         """Returns a query for the given values (creates '=' filters for this
         property and additionally applies filters."""
 
         if not isinstance(values, (tuple, list)):
             values = (values,)
-#        if keys_only:
-#            filtered = self.model_class.all(keys_only=keys_only)
-#        else:
-#            filtered = self.model_class.all()
         filtered = self.model_class.objects.all()
         for value in set(values):
             filter = {self.name:value}
@@ -175,8 +170,7 @@ class SearchableListField(StringListField):
         return filtered
 
     def search(self, query, filters={},
-            indexer=None, splitter=None, language=settings.LANGUAGE_CODE,
-            keys_only=False):
+            indexer=None, splitter=None, language=settings.LANGUAGE_CODE):
         if not splitter:
             splitter = default_splitter
         words = splitter(query, indexing=False, language=language)
@@ -189,10 +183,8 @@ class SearchableListField(StringListField):
         # Don't allow empty queries
         if not words and query:
             # This query will never find anything
-            return self.filter((), filters={self.name:' '},
-                               keys_only=keys_only)
-        return self.filter(sorted(words), filters,
-                           keys_only=keys_only)
+            return self.filter((), filters={self.name:' '})
+        return self.filter(sorted(words), filters)
 
 class SearchIndexField(SearchableListField):
     """
@@ -314,13 +306,12 @@ class SearchIndexField(SearchableListField):
                         continue
                     setattr(self, key, value)
                     del kwargs[key]
-                # TODO: shouldn't we use here super or something like this?
                 models.Model.__init__(self, *args, **kwargs)
             attrs['__init__'] = __init__
             self._relation_index_model = type(
-                'RelationIndex__%s_%s__%s' % (self.model_class._meta.app_label,
-                                           self.model_class._meta.object_name,
-                                           self.name),
+                'RelationIndex_%s_%s_%s' % (self.model_class._meta.app_label,
+                                            self.model_class._meta.object_name,
+                                            self.name),
                 (models.Model,), attrs)
 
     def get_index_values(self, model_instance):
@@ -370,26 +361,19 @@ class SearchIndexField(SearchableListField):
 
     def contribute_to_class(self, cls, name):
         attrs = {name:self}
-        def search(self, query, filters={}, language=settings.LANGUAGE_CODE,
-                keys_only=False):
-            return attrs[name].search(query, filters, language, keys_only)
+        def search(self, query, filters={}, language=settings.LANGUAGE_CODE):
+            return getattr(self, name).search(query, filters, language)
         attrs['search'] = search
         setattr(cls, name, type('Indexes', (models.Manager, ), attrs)())
         super(SearchIndexField, self).contribute_to_class(cls, name)
 
-    def search(self, query, filters={},
-               language=settings.LANGUAGE_CODE, keys_only=False):
+    def search(self, query, filters={}, language=settings.LANGUAGE_CODE):
         if self.relation_index:
             items = self._relation_index_model._meta.get_field_by_name(
-                self.name)[0].search(query, filters, language=language,
-                keys_only=True)
-            # TODO: Add support for values('pk') to the app engine backend
-#            items = getattr(self._relation_index_model, self.name).search(query,
-#                filters, language=language).values('pk')
-            return RelationIndexQuery(self, items, keys_only=keys_only)
+                self.name)[0].search(query, filters, language=language).values('pk')
+            return RelationIndexQuery(self, items)
         return super(SearchIndexField, self).search(query, filters,
-            splitter=self.splitter, indexer=self.indexer, language=language,
-            keys_only=keys_only)
+            splitter=self.splitter, indexer=self.indexer, language=language)
 
 def load_backend():
     backend = getattr(settings, 'BACKEND', 'search.backends.appengine')
@@ -448,11 +432,10 @@ class QueryTraits(object):
 class RelationIndexQuery(QueryTraits):
     """Combines the results of multiple queries by appending the queries in the
     given order."""
-    def __init__(self, property, query, keys_only):
+    def __init__(self, property, query):
         self.model = property.model_class
         self.property = property
         self.query = query
-        self.keys_only = keys_only
 
     def order(self, *args, **kwargs):
         self.query = self.query.order(*args, **kwargs)
@@ -461,10 +444,12 @@ class RelationIndexQuery(QueryTraits):
         self.query = self.query.filter(*args, **kwargs)
 
     def __getitem__(self, index):
-        pks = [instance.pk for instance in self.query[index]]
-        if self.keys_only:
-            return pks
+        pks = [instance['pk'] for instance in self.query[index]]
         return [item for item in self.model.objects.filter(pk__in=pks) if item]
 
     def count(self):
         return self.query.count()
+
+    # TODO: add keys_only query
+#    def values(self, fields):
+#        pass
