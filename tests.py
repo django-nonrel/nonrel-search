@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 from django.db import models
 from django.test import TestCase
-from search.core import SearchIndexField, load_backend
+from search.core import SearchIndexField, load_backend, startswith
 
 backend = load_backend()
 update_relation_index = getattr(backend, 'update_relation_index_in_tests',
         lambda: 0)
 before_test_setup = getattr(backend, 'before_test_setup', lambda: 0)
 
+# TODO: add filters test to test if values only get indexed if the filter matches
 class Indexed(models.Model):
     # Test normal and prefix index
     one = models.CharField(max_length=500, null=True)
+    one_index = SearchIndexField('one', indexer=startswith)
     two = models.CharField(max_length=500)
     one_two_index = SearchIndexField(('one', 'two'))
     check = models.BooleanField()
@@ -34,6 +36,9 @@ class TestIndexed(TestCase):
         update_relation_index()
 
     def test_setup(self):
+        self.assertEqual(len(Indexed.one_index.search('oneo')), 3)
+        self.assertEqual(len(Indexed.one_index.search('one')), 6)
+
         self.assertEqual(len(Indexed.one_two_index.search('one2')), 1)
         self.assertEqual(len(Indexed.one_two_index.search('two')), 0)
         self.assertEqual(len(Indexed.one_two_index.search('two1')), 1)
@@ -52,6 +57,18 @@ class TestIndexed(TestCase):
             filters={'check__exact':False, 'one':'blub'})), 1)
 
     def test_change(self):
+        one = Indexed.one_index.search('oNeone1').get()
+        one.one = 'oneoneone'
+        one.save()
+        update_relation_index()
+        # The index ListField must be empty on the main entity and filled
+        # on the relation index, only
+        self.assertEqual(
+            len(Indexed.one_index.search('oNeoneo').get().one_index), 0)
+        # TODO: Add _relation_index_model to the manager
+#        self.assertEqual(
+#            len(Indexed.one_index._relation_index_model.one_index.search('oNeoneo').get().one_index), 9)
+
         value = Indexed.value_index.search('value0').get()
         value.value = 'value1 test-word'
         value.save()

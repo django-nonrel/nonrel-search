@@ -221,6 +221,8 @@ class SearchIndexField(SearchableListField):
 
     def should_index(self, values):
         # Check if filter doesn't match
+        if not values:
+            return False
         for filter, value in self.filters.items():
             attr, op = filter, 'exact'
             if '__' in filter:
