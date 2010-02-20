@@ -2,7 +2,6 @@ from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models import signals
-#from django.db.transaction import commit_locked
 from djangotoolbox.fields import ListField
 from djangotoolbox.utils import getattr_by_path
 from copy import copy
@@ -148,17 +147,13 @@ class StringListField(ListField):
         self.model_class = cls
         super(StringListField, self).contribute_to_class(cls, name)
 
-# TODO: filters should be some function in order to support django's exlude
-# functionality, Q-objects, ...
 class SearchableListField(StringListField):
     """
     This is basically a string ListField with search support.
     """
-    # TODO: filters can be removed because we can add filters after or before
-    # calling search
-    def filter(self, values, filters={}):
+    def filter(self, values):
         """Returns a query for the given values (creates '=' filters for this
-        field and additionally applies filters."""
+        field. Additionally filters can be applied afterwoods via chaining."""
 
         if not isinstance(values, (tuple, list)):
             values = (values,)
@@ -166,11 +161,10 @@ class SearchableListField(StringListField):
         for value in set(values):
             filter = {self.name:value}
             filtered = filtered.filter(**filter)
-        filtered = filtered.filter(**filters)
         return filtered
 
-    def search(self, query, filters={},
-            indexer=None, splitter=None, language=settings.LANGUAGE_CODE):
+    def search(self, query, indexer=None, splitter=None,
+            language=settings.LANGUAGE_CODE):
         if not splitter:
             splitter = default_splitter
         words = splitter(query, indexing=False, language=language)
@@ -183,8 +177,8 @@ class SearchableListField(StringListField):
         # Don't allow empty queries
         if not words and query:
             # This query will never find anything
-            return self.filter((), filters={self.name:' '})
-        return self.filter(sorted(words), filters)
+            return self.filter(()).filter({self.name:' '})
+        return self.filter(sorted(words))
 
 class SearchIndexField(SearchableListField):
     """
@@ -197,6 +191,8 @@ class SearchIndexField(SearchableListField):
 
     With "filters" you can specify when a values index should be created.
     """
+    # TODO: filters has to be extended (maybe a function) to allow Django's
+    # QuerySet methods like exclude
     def __init__(self, fields_to_index, indexer=None, splitter=default_splitter,
             relation_index=True, integrate='*', filters={},
             language=site_language, **kwargs):
@@ -363,19 +359,19 @@ class SearchIndexField(SearchableListField):
 
     def contribute_to_class(self, cls, name):
         attrs = {name:self}
-        def search(self, query, filters={}, language=settings.LANGUAGE_CODE):
-            return getattr(self, name).search(query, filters, language)
+        def search(self, query, language=settings.LANGUAGE_CODE):
+            return getattr(self, name).search(query, language)
         attrs['search'] = search
         setattr(cls, name, type('Indexes', (models.Manager, ), attrs)())
         super(SearchIndexField, self).contribute_to_class(cls, name)
 
-    def search(self, query, filters={}, language=settings.LANGUAGE_CODE):
+    def search(self, query, language=settings.LANGUAGE_CODE):
         if self.relation_index:
             items = self._relation_index_model._meta.get_field_by_name(
-                self.name)[0].search(query, filters, language=language).values('pk')
+                self.name)[0].search(query, language=language).values('pk')
             return RelationIndexQuery(self, items)
-        return super(SearchIndexField, self).search(query, filters,
-            splitter=self.splitter, indexer=self.indexer, language=language)
+        return super(SearchIndexField, self).search(query, splitter=self.splitter,
+            indexer=self.indexer, language=language)
 
 def load_backend():
     backend = getattr(settings, 'BACKEND', 'search.backends.appengine')
@@ -399,11 +395,9 @@ def post(delete, sender, instance, **kwargs):
                     sender._meta.object_name], field.name, instance.pk, delete)
 
 def post_save(sender, instance, **kwargs):
-    # Update indexes after transaction
     post(False, sender, instance, **kwargs)
 
 def post_delete(sender, instance, **kwargs):
-    # Update indexes after transaction
     post(True, sender, instance, **kwargs)
 
 def install_index_model(sender, **kwargs):
@@ -444,6 +438,7 @@ class RelationIndexQuery(QueryTraits):
 
     def filter(self, *args, **kwargs):
         self.query = self.query.filter(*args, **kwargs)
+        return self
 
     def __getitem__(self, index):
         pks = [instance.pk if isinstance(instance, models.Model) else instance['pk']

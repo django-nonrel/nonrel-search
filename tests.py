@@ -49,12 +49,12 @@ class TestIndexed(TestCase):
         self.assertEqual(len(Indexed.value_index.search('word')), 3)
         self.assertEqual(len(Indexed.value_index.search('test-word')), 3)
 
-        self.assertEqual(len(Indexed.value_index.search('value0',
-            filters={'check':False})), 1)
-        self.assertEqual(len(Indexed.value_index.search('value1',
-            filters={'check':True, 'one':u'ÜÄÖ-+!#><|'})), 1)
-        self.assertEqual(len(Indexed.value_index.search('value2',
-            filters={'check__exact':False, 'one':'blub'})), 1)
+        self.assertEqual(len(Indexed.value_index.search('value0').filter(
+            check=False)), 1)
+        self.assertEqual(len(Indexed.value_index.search('value1').filter(
+            check=True, one=u'ÜÄÖ-+!#><|')), 1)
+        self.assertEqual(len(Indexed.value_index.search('value2').filter(
+            check__exact=False, one='blub')), 1)
 
     def test_change(self):
         one = Indexed.one_index.search('oNeone1').get()
@@ -63,8 +63,7 @@ class TestIndexed(TestCase):
         update_relation_index()
         # The index ListField must be empty on the main entity and filled
         # on the relation index, only
-        self.assertEqual(
-            len(Indexed.one_index.search('oNeoneo').get().one_index), 0)
+        self.assertEqual(len(Indexed.one_index.search('oNeoneo').get().one_index), 0)
         # TODO: Add _relation_index_model to the manager
 #        self.assertEqual(
 #            len(Indexed.one_index._relation_index_model.one_index.search('oNeoneo').get().one_index), 9)
