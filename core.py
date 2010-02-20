@@ -158,7 +158,7 @@ class SearchableListField(StringListField):
     # calling search
     def filter(self, values, filters={}):
         """Returns a query for the given values (creates '=' filters for this
-        property and additionally applies filters."""
+        field and additionally applies filters."""
 
         if not isinstance(values, (tuple, list)):
             values = (values,)
@@ -299,7 +299,7 @@ class SearchIndexField(SearchableListField):
             owner = self
             def __init__(self, *args, **kwargs):
                 # Save some space: don't copy the whole indexed text into the
-                # relation index property unless the property gets integrated.
+                # relation index field unless the field gets integrated.
                 field_names = [field.name for field in self._meta.fields]
                 owner_field_names = [field.name
                                      for field in owner.model_class._meta.fields]
@@ -384,11 +384,11 @@ def load_backend():
         import_list = [backend.rsplit('.', 1)[1]]
     return __import__(backend, globals(), locals(), import_list)
 
-def push_update_relation_index(model_descriptor, property_name, parent_key,
+def push_update_relation_index(model_descriptor, field_name, parent_key,
         delete):
     # TODO: replace this with a abstract background task api call
     backend = load_backend()
-    backend.update_relation_index(model_descriptor, property_name, parent_key,
+    backend.update_relation_index(model_descriptor, field_name, parent_key,
         delete)
 
 def post(delete, sender, instance, **kwargs):
@@ -434,9 +434,9 @@ class QueryTraits(object):
 class RelationIndexQuery(QueryTraits):
     """Combines the results of multiple queries by appending the queries in the
     given order."""
-    def __init__(self, property, query):
-        self.model = property.model_class
-        self.property = property
+    def __init__(self, field, query):
+        self.model = field.model_class
+        self.field = field
         self.query = query
 
     def order(self, *args, **kwargs):
