@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 from django.db import models
 from django.test import TestCase
-from search.core import SearchIndexField, load_backend, startswith
 
-backend = load_backend()
-update_relation_index = getattr(backend, 'update_relation_index_in_tests',
-        lambda: 0)
-before_test_setup = getattr(backend, 'before_test_setup', lambda: 0)
+# use immediate_update on tests
+from django.conf import settings
+settings.BACKEND = 'search.backends.immediate_update'
+
+from search.core import SearchIndexField, startswith
 
 # TODO: add filters test to test if values only get indexed if the filter matches
 class Indexed(models.Model):
@@ -23,7 +23,6 @@ class Indexed(models.Model):
 
 class TestIndexed(TestCase):
     def setUp(self):
-        before_test_setup()
         for i in range(3):
             Indexed(one=u'OneOne%d' % i).save()
 
@@ -33,7 +32,6 @@ class TestIndexed(TestCase):
         for i in range(3):
             Indexed(one=(None, u'ÜÄÖ-+!#><|', 'blub')[i],
                     check=bool(i%2), value=u'value%d test-word' % i).save()
-        update_relation_index()
 
     def test_setup(self):
         self.assertEqual(len(Indexed.one_index.search('oneo')), 3)
@@ -60,7 +58,6 @@ class TestIndexed(TestCase):
         one = Indexed.one_index.search('oNeone1').get()
         one.one = 'oneoneone'
         one.save()
-        update_relation_index()
         # The index ListField must be empty on the main entity and filled
         # on the relation index, only
         self.assertEqual(len(Indexed.one_index.search('oNeoneo').get().one_index), 0)
@@ -74,11 +71,9 @@ class TestIndexed(TestCase):
         value.one = 'shidori'
         value.value = 'value3 rasengan/shidori'
         value.save()
-        update_relation_index()
         self.assertEqual(len(Indexed.value_index.search('rasengan')), 1)
         self.assertEqual(len(Indexed.value_index.search('value3')), 1)
 
         value = Indexed.value_index.search('value3').get()
         value.delete()
-        update_relation_index()
         self.assertEqual(len(Indexed.value_index.search('value3')), 0)

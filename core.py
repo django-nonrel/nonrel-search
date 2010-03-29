@@ -237,16 +237,16 @@ class SearchIndexField(SearchableListField):
         return True
 
 #    @commit_locked
-    def update_relation_index(self, parent_key, delete=False):
+    def update_relation_index(self, parent_pk, delete=False):
         model = self._relation_index_model
         try:
-            index = model.objects.get(pk=parent_key)
+            index = model.objects.get(pk=parent_pk)
         except ObjectDoesNotExist:
             index = None
 
         if not delete:
             try:
-                parent = self.model_class.objects.get(pk=parent_key)
+                parent = self.model_class.objects.get(pk=parent_pk)
             except ObjectDoesNotExist:
                 parent = None
 
@@ -262,7 +262,7 @@ class SearchIndexField(SearchableListField):
 
         # Update/create index
         if not index:
-            index = model(pk=parent_key, **values)
+            index = model(pk=parent_pk, **values)
 
         # This guarantees that we also set virtual @properties
         for key, value in values.items():
@@ -373,32 +373,25 @@ class SearchIndexField(SearchableListField):
         return super(SearchIndexField, self).search(query, splitter=self.splitter,
             indexer=self.indexer, language=language)
 
-def load_backend():
-    backend = getattr(settings, 'BACKEND', 'search.backends.appengine')
-    import_list = []
-    if '.' in backend:
-        import_list = [backend.rsplit('.', 1)[1]]
-    return __import__(backend, globals(), locals(), import_list)
-
-def push_update_relation_index(model_descriptor, field_name, parent_key,
-        delete):
-    # TODO: replace this with a abstract background task api call
-    backend = load_backend()
-    backend.update_relation_index(model_descriptor, field_name, parent_key,
-        delete)
-
 def post(delete, sender, instance, **kwargs):
     for field in sender._meta.fields:
         if isinstance(field, SearchIndexField):
             if field.relation_index:
-                push_update_relation_index([sender._meta.app_label,
-                    sender._meta.object_name], field.name, instance.pk, delete)
+                backend = load_backend()
+                backend.update_relation_index(field, instance.pk, delete)
 
 def post_save(sender, instance, **kwargs):
     post(False, sender, instance, **kwargs)
 
 def post_delete(sender, instance, **kwargs):
     post(True, sender, instance, **kwargs)
+
+def load_backend():
+    backend = getattr(settings, 'BACKEND', 'search.backends.immediate_update')
+    import_list = []
+    if '.' in backend:
+        import_list = [backend.rsplit('.', 1)[1]]
+    return __import__(backend, globals(), locals(), import_list)
 
 def install_index_model(sender, **kwargs):
     needs_relation_index = False
@@ -411,7 +404,7 @@ def install_index_model(sender, **kwargs):
         signals.post_delete.connect(post_delete, sender=sender)
 signals.class_prepared.connect(install_index_model)
 
-# TODO: Refactor QueryTraits using Djangos QuerySet
+# TODO: Refactor QueryTraits using Django's QuerySet
 class QueryTraits(object):
     def __iter__(self):
         return iter(self[:301])
