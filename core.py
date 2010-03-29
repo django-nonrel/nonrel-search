@@ -186,7 +186,7 @@ class SearchIndexField(SearchableListField):
 
     If "relation_index" is True the index will be stored in a separate entity.
 
-    With "integrate" you can add fields to your values/relation index,
+    With "integrate" you can add fields to your relation index,
     so they can be searched, too.
 
     With "filters" you can specify when a values index should be created.
