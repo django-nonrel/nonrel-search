@@ -8,7 +8,6 @@ settings.BACKEND = 'search.backends.immediate_update'
 
 from search.core import SearchIndexField, startswith
 
-# TODO: add filters test to test if values only get indexed if the filter matches
 class Indexed(models.Model):
     # Test normal and prefix index
     one = models.CharField(max_length=500, null=True)
@@ -21,6 +20,12 @@ class Indexed(models.Model):
     value = models.CharField(max_length=500)
     value_index = SearchIndexField('value', integrate=('one', 'check'))
 
+#Test filters
+class FiltersIndexed(models.Model):
+    value = models.CharField(max_length=500)
+    check = models.BooleanField()
+    checked_index = SearchIndexField(('value', ), filters={'check':True, })
+
 class TestIndexed(TestCase):
     def setUp(self):
         for i in range(3):
@@ -32,6 +37,9 @@ class TestIndexed(TestCase):
         for i in range(3):
             Indexed(one=(None, u'ÜÄÖ-+!#><|', 'blub')[i],
                     check=bool(i%2), value=u'value%d test-word' % i).save()
+
+        for i in range(3):
+            FiltersIndexed(check=bool(i%2), value=u'value%d test-word' % i).save()
 
     def test_setup(self):
         self.assertEqual(len(Indexed.one_index.search('oneo')), 3)
@@ -53,6 +61,9 @@ class TestIndexed(TestCase):
             check=True, one=u'ÜÄÖ-+!#><|')), 1)
         self.assertEqual(len(Indexed.value_index.search('value2').filter(
             check__exact=False, one='blub')), 1)
+
+        # test filters
+        self.assertEqual(len(FiltersIndexed.checked_index.search('test-word')), 1)
 
     def test_change(self):
         one = Indexed.one_index.search('oNeone1').get()
