@@ -134,55 +134,43 @@ class DictEmu(object):
     def __getitem__(self, key):
         return getattr(self.data, key)
 
-class StringListField(ListField):
-    def __init__(self, *args, **kwargs):
-        # TODO: provide some property in the settings which tells us which
-        # model field to use for field type in order to let other backends
-        # use other max_lengts,...
+# IndexField is a StringListField storing indexed fields of a model_instance
+class IndexField(ListField):
+    def __init__(self, self_manager, *args, **kwargs):
+        self.search_manager = self_manager
         kwargs['field_type'] = models.CharField(max_length=500)
-        super(StringListField, self).__init__(*args, **kwargs)
+        super(IndexField, self).__init__(*args, **kwargs)
 
-    def contribute_to_class(self, cls, name):
-        # XXX: Use contribute_to_class in order to add the model_class to the field
-        self.model_class = cls
-        super(StringListField, self).contribute_to_class(cls, name)
+    def pre_save(self, model_instance, add):
+        if self.search_manager.filters and not \
+                self.search_manager.should_index(DictEmu(model_instance)):
+            return []
 
-class SearchableListField(StringListField):
+        language = self.search_manager.language
+        if callable(language):
+            language = language(model_instance, property=self)
+
+        index = []
+        for field in self.search_manager.fields_to_index:
+            values = getattr_by_path(model_instance, field, None)
+            if not values:
+                values = ()
+            elif not isinstance(values, (list, tuple)):
+                values = (values,)
+            for value in values:
+                index.extend(self.search_manager.splitter(value, indexing=True,
+                    language=language))
+        if self.search_manager.indexer:
+            index = self.search_manager.indexer(index, indexing=True,
+                language=language)
+        # Sort index to make debugging easier
+        setattr(model_instance, self.search_manager.search_list_field_name,
+            sorted(set(index)))
+        return index
+
+class SearchManager(models.Manager):
     """
-    This is basically a string ListField with search support.
-    """
-    def filter(self, values):
-        """Returns a query for the given values (creates '=' filters for this
-        field. Additionally filters can be applied afterwoods via chaining."""
-
-        if not isinstance(values, (tuple, list)):
-            values = (values,)
-        filtered = self.model_class.objects.all()
-        for value in set(values):
-            filter = {self.name:value}
-            filtered = filtered.filter(**filter)
-        return filtered
-
-    def search(self, query, indexer=None, splitter=None,
-            language=settings.LANGUAGE_CODE):
-        if not splitter:
-            splitter = default_splitter
-        words = splitter(query, indexing=False, language=language)
-        if indexer:
-            words = indexer(words, indexing=False, language=language)
-        # Optimize query
-        words = set(words)
-        if len(words) >= 4:
-            words -= get_stop_words(language)
-        # Don't allow empty queries
-        if not words and query:
-            # This query will never find anything
-            return self.filter(()).filter({self.name:' '})
-        return self.filter(sorted(words))
-
-class SearchIndexField(SearchableListField):
-    """
-    Simple full-text index for the given fields.
+    Simple full-text search manager for the given fields.
 
     If "relation_index" is True the index will be stored in a separate entity.
 
@@ -191,11 +179,14 @@ class SearchIndexField(SearchableListField):
 
     With "filters" you can specify when a values index should be created.
     """
-    # TODO: filters has to be extended (maybe a function) to allow Django's
-    # QuerySet methods like exclude
     def __init__(self, fields_to_index, indexer=None, splitter=default_splitter,
             relation_index=True, integrate='*', filters={},
             language=site_language, **kwargs):
+        # integrate should be specified when using the relation index otherwise
+        # we doublicate the amount of data in the datastore and the relation
+        # index makes no sense any more
+        # TODO: filters has to be extended (maybe a function) to allow Django's
+        # QuerySet methods like exclude
         if integrate is None:
             integrate = ()
         if integrate == '*' and not relation_index:
@@ -213,7 +204,51 @@ class SearchIndexField(SearchableListField):
         self.relation_index = relation_index
         if len(fields_to_index) == 0:
             raise ValueError('No fields specified for index!')
-        super(SearchIndexField, self).__init__(**kwargs)
+        self.serach_list_field_name = ''
+        super(SearchManager, self).__init__(**kwargs)
+
+    def contribute_to_class(self, model, name):
+        super(SearchManager, self).contribute_to_class(model, name)
+        # set default_manager to None such that the default_manager will be set
+        # to 'objects'
+        setattr(model, '_default_manager', None)
+        self.name = name
+        if not self.relation_index:
+#            print model, name
+            self.search_list_field_name = "%s_search_list_field" %name
+            # Add field to class dynamically
+            setattr(model, self.search_list_field_name, IndexField(self))
+            getattr(model, self.search_list_field_name).contribute_to_class(
+                model, self.search_list_field_name)
+
+    def filter(self, values):
+        """Returns a query for the given values (creates '=' filters for this
+        field. Additionally filters can be applied afterwoods via chaining."""
+
+        if not isinstance(values, (tuple, list)):
+            values = (values,)
+        filtered = self.model.objects.all()
+        for value in set(values):
+            filter = {self.search_list_field_name:value}
+            filtered = filtered.filter(**filter)
+        return filtered
+
+    def _search(self, query, indexer=None, splitter=None,
+            language=settings.LANGUAGE_CODE):
+        if not splitter:
+            splitter = default_splitter
+        words = splitter(query, indexing=False, language=language)
+        if indexer:
+            words = indexer(words, indexing=False, language=language)
+        # Optimize query
+        words = set(words)
+        if len(words) >= 4:
+            words -= get_stop_words(language)
+        # Don't allow empty queries
+        if not words and query:
+            # This query will never find anything
+            return self.filter(()).filter({self.search_list_field_name:' '})
+        return self.filter(sorted(words))
 
     def should_index(self, values):
         # Check if filter doesn't match
@@ -238,15 +273,15 @@ class SearchIndexField(SearchableListField):
 
 #    @commit_locked
     def update_relation_index(self, parent_pk, delete=False):
-        model = self._relation_index_model
+        relation_index_model = self._relation_index_model
         try:
-            index = model.objects.get(pk=parent_pk)
+            index = relation_index_model.objects.get(pk=parent_pk)
         except ObjectDoesNotExist:
             index = None
 
         if not delete:
             try:
-                parent = self.model_class.objects.get(pk=parent_pk)
+                parent = self.model.objects.get(pk=parent_pk)
             except ObjectDoesNotExist:
                 parent = None
 
@@ -262,7 +297,7 @@ class SearchIndexField(SearchableListField):
 
         # Update/create index
         if not index:
-            index = model(pk=parent_pk, **values)
+            index = relation_index_model(pk=parent_pk, **values)
 
         # This guarantees that we also set virtual @properties
         for key, value in values.items():
@@ -271,24 +306,27 @@ class SearchIndexField(SearchableListField):
         index.save()
 
     def create_index_model(self):
+        # TODO: remove checks for relation_index=True because create_index_model
+        # is only called for relation_index=True
         attrs = dict(__module__=self.__module__)
         # By default we integrate everything when using relation index
+        # manager will add the IndexField to the relation index automaticaly
         if self.relation_index and self.integrate == ('*',):
             self.integrate = tuple(field.name
-                                   for field in self.model_class._meta.fields
-                                   if not isinstance(field, SearchIndexField))
+                                   for field in self.model._meta.fields
+                                   if not isinstance(field, IndexField))
 
         for field_name in self.integrate:
-            field = self.model_class._meta.get_field_by_name(field_name)[0]
+            field = self.model._meta.get_field_by_name(field_name)[0]
             field = copy(field)
             attrs[field_name] = field
             if hasattr(field, 'related_name'):
                 attrs[field_name].related_name = '_sidx_%s_%s_set_' % (
-                    self.model_class._meta.object_name.lower(),
+                    self.model._meta.object_name.lower(),
                     self.name,
                 )
-        index_name = self.name
-        attrs[index_name] = SearchIndexField(self.fields_to_index,
+        manager_name = self.name
+        attrs[manager_name] = SearchManager(self.fields_to_index,
             splitter=self.splitter, indexer=self.indexer,
             language=self.language, relation_index=False)
         if self.relation_index:
@@ -298,7 +336,7 @@ class SearchIndexField(SearchableListField):
                 # relation index field unless the field gets integrated.
                 field_names = [field.name for field in self._meta.fields]
                 owner_field_names = [field.name
-                                     for field in owner.model_class._meta.fields]
+                                     for field in owner.model._meta.fields]
                 for key, value in kwargs.items():
                     if key in field_names or key not in owner_field_names:
                         continue
@@ -307,8 +345,8 @@ class SearchIndexField(SearchableListField):
                 models.Model.__init__(self, *args, **kwargs)
             attrs['__init__'] = __init__
             self._relation_index_model = type(
-                'RelationIndex_%s_%s_%s' % (self.model_class._meta.app_label,
-                                            self.model_class._meta.object_name,
+                'RelationIndex_%s_%s_%s' % (self.model._meta.app_label,
+                                            self.model._meta.object_name,
                                             self.name),
                 (models.Model,), attrs)
 
@@ -322,7 +360,7 @@ class SearchIndexField(SearchableListField):
         filters = tuple(filters)
         values = {}
         for field_name in set(self.fields_to_index + self.integrate + filters):
-            instance = self.model_class._meta.get_field_by_name(field_name)[0]
+            instance = self.model._meta.get_field_by_name(field_name)[0]
             if isinstance(instance, models.ForeignKey):
                 value = instance.pre_save(model_instance, False)
             else:
@@ -333,58 +371,13 @@ class SearchIndexField(SearchableListField):
             values[field_name] = value
         return values
 
-    def pre_save(self, model_instance, add):
-        if self.filters and not self.should_index(DictEmu(model_instance)) \
-                or self.relation_index:
-            return []
-
-        language = self.language
-        if callable(language):
-            language = language(model_instance, property=self)
-
-        index = []
-        for field in self.fields_to_index:
-            values = getattr_by_path(model_instance, field, None)
-            if not values:
-                values = ()
-            elif not isinstance(values, (list, tuple)):
-                values = (values,)
-            for value in values:
-                index.extend(self.splitter(value, indexing=True, language=language))
-        if self.indexer:
-            index = self.indexer(index, indexing=True, language=language)
-        # Sort index to make debugging easier
-        setattr(model_instance, self.name, sorted(set(index)))
-        return index
-
-    def contribute_to_class(self, cls, name):
-        attrs = {name:self}
-        def search(self, query, language=settings.LANGUAGE_CODE):
-            return getattr(self, name).search(query, language)
-        attrs['search'] = search
-        setattr(cls, name, type('Indexes', (models.Manager, ), attrs)())
-        super(SearchIndexField, self).contribute_to_class(cls, name)
-
     def search(self, query, language=settings.LANGUAGE_CODE):
         if self.relation_index:
-            items = self._relation_index_model._meta.get_field_by_name(
-                self.name)[0].search(query, language=language).values('pk')
-            return RelationIndexQuery(self, items)
-        return super(SearchIndexField, self).search(query, splitter=self.splitter,
+            items = getattr(self._relation_index_model, self.name).search(query,
+                language=language).values('pk')
+            return RelationIndexQuery(self.model, items)
+        return self._search(query, splitter=self.splitter,
             indexer=self.indexer, language=language)
-
-def post(delete, sender, instance, **kwargs):
-    for field in sender._meta.fields:
-        if isinstance(field, SearchIndexField):
-            if field.relation_index:
-                backend = load_backend()
-                backend.update_relation_index(field, instance.pk, delete)
-
-def post_save(sender, instance, **kwargs):
-    post(False, sender, instance, **kwargs)
-
-def post_delete(sender, instance, **kwargs):
-    post(True, sender, instance, **kwargs)
 
 def load_backend():
     backend = getattr(settings, 'BACKEND', 'search.backends.immediate_update')
@@ -393,18 +386,33 @@ def load_backend():
         import_list = [backend.rsplit('.', 1)[1]]
     return __import__(backend, globals(), locals(), import_list)
 
+def post(delete, sender, instance, **kwargs):
+    for counter, manager_name, manager in sender._meta.concrete_managers:
+        if isinstance(manager, SearchManager):
+            if manager.relation_index:
+                backend = load_backend()
+                # TODO: rename backend.update_relation_index attr 'field' to
+                # 'manager'
+                backend.update_relation_index(manager, instance.pk, delete)
+
+def post_save(sender, instance, **kwargs):
+    post(False, sender, instance, **kwargs)
+
+def post_delete(sender, instance, **kwargs):
+    post(True, sender, instance, **kwargs)
+
 def install_index_model(sender, **kwargs):
     needs_relation_index = False
-    for field in sender._meta.fields:
-        if isinstance(field, SearchIndexField) and field.relation_index:
-            field.create_index_model()
+    # what to do for abstract_managers?
+    for counter, manager_name, manager in sender._meta.concrete_managers:
+        if isinstance(manager, SearchManager) and manager.relation_index:
+            manager.create_index_model()
             needs_relation_index = True
     if needs_relation_index:
         signals.post_save.connect(post_save, sender=sender)
         signals.post_delete.connect(post_delete, sender=sender)
 signals.class_prepared.connect(install_index_model)
 
-# TODO: Refactor QueryTraits using Django's QuerySet
 class QueryTraits(object):
     def __iter__(self):
         return iter(self[:301])
@@ -421,9 +429,8 @@ class QueryTraits(object):
 class RelationIndexQuery(QueryTraits):
     """Combines the results of multiple queries by appending the queries in the
     given order."""
-    def __init__(self, field, query):
-        self.model = field.model_class
-        self.field = field
+    def __init__(self, model, query):
+        self.model = model
         self.query = query
 
     def order(self, *args, **kwargs):
@@ -436,11 +443,18 @@ class RelationIndexQuery(QueryTraits):
     def __getitem__(self, index):
         pks = [instance.pk if isinstance(instance, models.Model) else instance['pk']
                 for instance in self.query[index]]
-        return [item for item in self.model.objects.filter(pk__in=pks) if item]
+        return [item for item in self.model.objects.filter(
+            pk__in=pks) if item]
 
     def count(self):
         return self.query.count()
 
     # TODO: add keys_only query
 #    def values(self, fields):
+#        pass
+#
+#class SearchIndexField():
+#    def __init__(self, fields_to_index, indexer=None, splitter=default_splitter,
+#            relation_index=True, integrate='*', filters={},
+#            language=site_language, **kwargs):
 #        pass
