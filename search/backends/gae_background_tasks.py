@@ -4,12 +4,12 @@ from google.appengine.ext import deferred
 
 default_search_queue = getattr(settings, 'DEFAULT_SEARCH_QUEUE', 'default')
 
-def update_relation_index(search_index_field, parent_pk, delete):
+def update_relation_index(search_manager, parent_pk, delete):
     # pass only the field / model names to the background task to transfer less
     # data
-    app_label = search_index_field.model_class._meta.app_label
-    object_name = search_index_field.model_class._meta.object_name
-    deferred.defer(update, app_label, object_name, search_index_field.name,
+    app_label = search_manager.model_class._meta.app_label
+    object_name = search_manager.model_class._meta.object_name
+    deferred.defer(update, app_label, object_name, search_manager.name,
         parent_pk, delete, _queue=default_search_queue)
 
 def update(app_label, object_name, field_name, parent_pk, delete):
