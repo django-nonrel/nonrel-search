@@ -457,9 +457,3 @@ class RelationIndexQuery(QueryTraits):
 #    def values(self, fields):
 #        pass
 
-# backwards compatibility
-#class SearchIndexField():
-#    def __init__(self, fields_to_index, indexer=None, splitter=default_splitter,
-#            relation_index=True, integrate='*', filters={},
-#            language=site_language, **kwargs):
-#        pass
