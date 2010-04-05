@@ -134,7 +134,7 @@ class DictEmu(object):
     def __getitem__(self, key):
         return getattr(self.data, key)
 
-# IndexField is a StringListField storing indexed fields of a model_instance
+# IndexField is a (string) ListField storing indexed fields of a model_instance
 class IndexField(ListField):
     def __init__(self, self_manager, *args, **kwargs):
         self.search_manager = self_manager
@@ -151,8 +151,8 @@ class IndexField(ListField):
             language = language(model_instance, property=self)
 
         index = []
-        for field in self.search_manager.fields_to_index:
-            values = getattr_by_path(model_instance, field, None)
+        for field_name in self.search_manager.fields_to_index:
+            values = getattr_by_path(model_instance, field_name, None)
             if not values:
                 values = ()
             elif not isinstance(values, (list, tuple)):
@@ -170,7 +170,7 @@ class IndexField(ListField):
 
 class SearchManager(models.Manager):
     """
-    Simple full-text search manager for the given fields.
+    Simple full-text manager adding a search function.
 
     If "relation_index" is True the index will be stored in a separate entity.
 
@@ -204,17 +204,20 @@ class SearchManager(models.Manager):
         self.relation_index = relation_index
         if len(fields_to_index) == 0:
             raise ValueError('No fields specified for index!')
-        self.serach_list_field_name = ''
+        # search_list_field_name will be set if no relation_index is used that is
+        # for relation_index=False or for the relation_index_model itself
+        self.search_list_field_name = ''
         super(SearchManager, self).__init__(**kwargs)
 
     def contribute_to_class(self, model, name):
         super(SearchManager, self).contribute_to_class(model, name)
         # set default_manager to None such that the default_manager will be set
-        # to 'objects'
+        # to 'objects' via the class-prepared signal calling
+        # ensure_default_manager
         setattr(model, '_default_manager', None)
         self.name = name
+        # add IndexField to the model if we do not use the relation_index
         if not self.relation_index:
-#            print model, name
             self.search_list_field_name = "%s_search_list_field" %name
             # Add field to class dynamically
             setattr(model, self.search_list_field_name, IndexField(self))
@@ -222,9 +225,10 @@ class SearchManager(models.Manager):
                 model, self.search_list_field_name)
 
     def filter(self, values):
-        """Returns a query for the given values (creates '=' filters for this
-        field. Additionally filters can be applied afterwoods via chaining."""
-
+        """
+        Returns a query for the given values (creates '=' filters for the
+        IndexField. Additionally filters can be applied afterwoods via chaining.
+        """
         if not isinstance(values, (tuple, list)):
             values = (values,)
         filtered = self.model.objects.all()
@@ -452,7 +456,8 @@ class RelationIndexQuery(QueryTraits):
     # TODO: add keys_only query
 #    def values(self, fields):
 #        pass
-#
+
+# backwards compatibility
 #class SearchIndexField():
 #    def __init__(self, fields_to_index, indexer=None, splitter=default_splitter,
 #            relation_index=True, integrate='*', filters={},
