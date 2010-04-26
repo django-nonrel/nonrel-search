@@ -371,7 +371,7 @@ class SearchManager(models.Manager):
                     isinstance(value, (list, tuple)):
                 value = sorted(value)
             if isinstance(field, models.ForeignKey):
-                values[field_name + '_id'] = value
+                values[field.column] = value
             else:
                 values[field_name] = value
         return values
