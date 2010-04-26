@@ -134,10 +134,10 @@ class DictEmu(object):
     def __getitem__(self, key):
         return getattr(self.data, key)
 
-# IndexField is a (string) ListField storing indexed fields of a model_instance
+# IndexField is a (String)ListField storing indexed fields of a model_instance
 class IndexField(ListField):
-    def __init__(self, self_manager, *args, **kwargs):
-        self.search_manager = self_manager
+    def __init__(self, search_manager, *args, **kwargs):
+        self.search_manager = search_manager
         kwargs['field_type'] = models.CharField(max_length=500)
         super(IndexField, self).__init__(*args, **kwargs)
 
@@ -310,8 +310,6 @@ class SearchManager(models.Manager):
         index.save()
 
     def create_index_model(self):
-        # TODO: remove checks for relation_index=True because create_index_model
-        # is only called for relation_index=True
         attrs = dict(__module__=self.__module__)
         # By default we integrate everything when using relation index
         # manager will add the IndexField to the relation index automaticaly
@@ -354,7 +352,7 @@ class SearchManager(models.Manager):
                                             self.name),
                 (models.Model,), attrs)
 
-    def get_index_values(self, model_instance):
+    def get_index_values(self, parent):
         filters = []
         for filter in self.filters.keys():
             if '__' in filter:
@@ -364,15 +362,18 @@ class SearchManager(models.Manager):
         filters = tuple(filters)
         values = {}
         for field_name in set(self.fields_to_index + self.integrate + filters):
-            instance = self.model._meta.get_field_by_name(field_name)[0]
-            if isinstance(instance, models.ForeignKey):
-                value = instance.pre_save(model_instance, False)
+            field = self.model._meta.get_field_by_name(field_name)[0]
+            if isinstance(field, models.ForeignKey):
+                value = field.pre_save(parent, False)
             else:
-                value = getattr(model_instance, field_name)
+                value = getattr(parent, field_name)
             if field_name == self.fields_to_index[0] and \
                     isinstance(value, (list, tuple)):
                 value = sorted(value)
-            values[field_name] = value
+            if isinstance(field, models.ForeignKey):
+                values[field_name + '_id'] = value
+            else:
+                values[field_name] = value
         return values
 
     def search(self, query, language=settings.LANGUAGE_CODE):
@@ -395,8 +396,6 @@ def post(delete, sender, instance, **kwargs):
         if isinstance(manager, SearchManager):
             if manager.relation_index:
                 backend = load_backend()
-                # TODO: rename backend.update_relation_index attr 'field' to
-                # 'manager'
                 backend.update_relation_index(manager, instance.pk, delete)
 
 def post_save(sender, instance, **kwargs):

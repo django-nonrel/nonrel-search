@@ -8,7 +8,18 @@ settings.BACKEND = 'search.backends.immediate_update'
 
 from search.core import SearchManager, startswith
 
+
+# ExtraData is used for ForeignKey tests
+class ExtraData(models.Model):
+    name = models.CharField(max_length=500)
+    description = models.CharField(max_length=500)
+
+    def __unicode__(self):
+        return self.name
+
 class Indexed(models.Model):
+    extra_data = models.ForeignKey(ExtraData)
+
     # Test normal and prefix index
     one = models.CharField(max_length=500, null=True)
     two = models.CharField(max_length=500)
@@ -30,14 +41,16 @@ class FiltersIndexed(models.Model):
 
 class TestIndexed(TestCase):
     def setUp(self):
+        extra_data = ExtraData()
+        extra_data.save()
         for i in range(3):
-            Indexed(one=u'OneOne%d' % i).save()
+            Indexed(extra_data=extra_data, one=u'OneOne%d' % i).save()
 
         for i in range(3):
-            Indexed(one=u'one%d' % i, two='two%d' % i).save()
+            Indexed(extra_data=extra_data, one=u'one%d' % i, two='two%d' % i).save()
 
         for i in range(3):
-            Indexed(one=(None, u'ÜÄÖ-+!#><|', 'blub')[i],
+            Indexed(extra_data=extra_data, one=(None, u'ÜÄÖ-+!#><|', 'blub')[i],
                     check=bool(i%2), value=u'value%d test-word' % i).save()
 
         for i in range(3):
@@ -63,6 +76,7 @@ class TestIndexed(TestCase):
 
         # test filters
         self.assertEqual(len(FiltersIndexed.checked_index.search('test-word')), 1)
+        self.assertEqual(len(Indexed.value_index.search('foobar')), 0)
 
     def test_change(self):
         one = Indexed.one_index.search('oNeone1').get()
