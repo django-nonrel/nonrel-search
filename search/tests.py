@@ -18,7 +18,8 @@ class ExtraData(models.Model):
         return self.name
 
 class Indexed(models.Model):
-    extra_data = models.ForeignKey(ExtraData)
+    extra_data = models.ForeignKey(ExtraData, related_name='indexed_model')
+    extra_data2 = models.ForeignKey(ExtraData, null=True)
 
     # Test normal and prefix index
     one = models.CharField(max_length=500, null=True)

@@ -4,7 +4,7 @@ from django.db import models
 from django.db.models import signals
 from djangotoolbox.fields import ListField
 from djangotoolbox.utils import getattr_by_path
-from copy import copy
+from copy import deepcopy
 import re
 import string
 
@@ -320,12 +320,12 @@ class SearchManager(models.Manager):
 
         for field_name in self.integrate:
             field = self.model._meta.get_field_by_name(field_name)[0]
-            field = copy(field)
+            field = deepcopy(field)
             attrs[field_name] = field
-            if hasattr(field, 'related_name'):
-                attrs[field_name].related_name = '_sidx_%s_%s_set_' % (
+            if isinstance(field, models.ForeignKey):
+                attrs[field_name].rel.related_name = '_sidx_%s_%s_%s_set_' % (
                     self.model._meta.object_name.lower(),
-                    self.name,
+                    self.name, field_name,
                 )
         manager_name = self.name
         attrs[manager_name] = SearchManager(self.fields_to_index,
