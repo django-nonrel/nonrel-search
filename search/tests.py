@@ -18,7 +18,7 @@ class ExtraData(models.Model):
         return self.name
 
 class Indexed(models.Model):
-    extra_data = models.ForeignKey(ExtraData, related_name='indexed_model')
+    extra_data = models.ForeignKey(ExtraData, related_name='indexed_model', null=True)
     extra_data2 = models.ForeignKey(ExtraData, null=True)
 
     # Test normal and prefix index
@@ -44,6 +44,10 @@ class TestIndexed(TestCase):
     def setUp(self):
         extra_data = ExtraData()
         extra_data.save()
+
+        Indexed(one=u'foo', two='bar').save()
+        Indexed(one=u'foo_2', two='bar').save()
+
         for i in range(3):
             Indexed(extra_data=extra_data, one=u'OneOne%d' % i).save()
 
@@ -58,6 +62,8 @@ class TestIndexed(TestCase):
             FiltersIndexed(check=bool(i%2), value=u'value%d test-word' % i).save()
 
     def test_setup(self):
+        self.assertEqual(1, len(Indexed.one_two_index.search('foo bar')))
+
         self.assertEqual(len(Indexed.one_index.search('oneo')), 3)
         self.assertEqual(len(Indexed.one_index.search('one')), 6)
 
