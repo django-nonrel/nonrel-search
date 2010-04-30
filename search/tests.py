@@ -4,7 +4,7 @@ from django.test import TestCase
 
 # use immediate_update on tests
 from django.conf import settings
-settings.BACKEND = 'search.backends.immediate_update'
+settings.SEARCH_BACKEND = 'search.backends.immediate_update'
 
 from search.core import SearchManager, startswith
 

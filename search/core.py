@@ -385,7 +385,7 @@ class SearchManager(models.Manager):
             indexer=self.indexer, language=language)
 
 def load_backend():
-    backend = getattr(settings, 'BACKEND', 'search.backends.immediate_update')
+    backend = getattr(settings, 'SEARCH_BACKEND', 'search.backends.immediate_update')
     import_list = []
     if '.' in backend:
         import_list = [backend.rsplit('.', 1)[1]]
