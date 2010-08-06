@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.conf import settings
 settings.SEARCH_BACKEND = 'search.backends.immediate_update'
 
+from search import register
 from search.core import SearchManager, startswith
 
 
@@ -27,18 +28,16 @@ class Indexed(models.Model):
     check = models.BooleanField()
     value = models.CharField(max_length=500)
 
-    # search managers
-    one_index = SearchManager('one', indexer=startswith)
-    one_two_index = SearchManager(('one', 'two'))
-    # relation index manager
-    value_index = SearchManager('value', integrate=('one', 'check'))
+register(Indexed, 'one_index', 'one', indexer=startswith)
+register(Indexed, 'one_two_index', ('one', 'two'))
+register(Indexed, 'value_index', 'value', integrate=('one', 'check'))
 
 # Test filters
 class FiltersIndexed(models.Model):
     value = models.CharField(max_length=500)
     check = models.BooleanField()
 
-    checked_index = SearchManager(('value', ), filters={'check':True, })
+register(FiltersIndexed, 'checked_index', 'value', filters={'check':True, })
 
 class TestIndexed(TestCase):
     def setUp(self):
