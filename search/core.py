@@ -414,7 +414,7 @@ def install_index_model(sender, **kwargs):
     if needs_relation_index:
         signals.post_save.connect(post_save, sender=sender)
         signals.post_delete.connect(post_delete, sender=sender)
-signals.class_prepared.connect(install_index_model)
+#signals.class_prepared.connect(install_index_model)
 
 class QueryTraits(object):
     def __iter__(self):
@@ -455,4 +455,3 @@ class RelationIndexQuery(QueryTraits):
     # TODO: add keys_only query
 #    def values(self, fields):
 #        pass
-
