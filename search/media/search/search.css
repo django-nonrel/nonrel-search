@@ -1,0 +1,12 @@
+span.page-nav-current {
+  color: black;
+  font-weight: bold;
+}
+
+span.page-nav {
+  color: gray;
+}
+
+.page-nav, .page-nav-current {
+  margin: 0 3px;
+}
