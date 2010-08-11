@@ -456,3 +456,7 @@ class RelationIndexQuery(QueryTraits):
     # TODO: add keys_only query
 #    def values(self, fields):
 #        pass
+
+def search(model, query, language=settings.LANGUAGE_CODE,
+        search_index='search_index'):
+    return getattr(model, search_index).search(query, language)

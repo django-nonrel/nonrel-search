@@ -1,7 +1,7 @@
 from django.conf import settings
 from djangotoolbox.http import JSONResponse
 
-def live_search_results(request, model, search_manager, limit=30,
+def live_search_results(request, model, search_index='search_index', limit=30,
         result_item_formatting=None, query_converter=None,
         converter=None, redirect=False):
     """
@@ -29,9 +29,9 @@ def live_search_results(request, model, search_manager, limit=30,
             limit = limit_override
     except:
         pass
-    search_manager = getattr(model, search_manager)
+    search_index = getattr(model, search_index)
     language = getattr(request, 'LANGUAGE_CODE', settings.LANGUAGE_CODE)
-    results = search_manager.search(query, language=language)
+    results = search_index.search(query, language=language)
     if query_converter:
         results = query_converter(request, results)
     results = results[:limit]
@@ -42,7 +42,7 @@ def live_search_results(request, model, search_manager, limit=30,
         if result_item_formatting:
             entry = result_item_formatting(item)
         else:
-            value = getattr(item, search_manager.fields_to_index[0])
+            value = getattr(item, search_index.fields_to_index[0])
             entry = {'value': force_escape(value), 'result': value}
         if 'data' not in entry:
             entry['data'] = {}
