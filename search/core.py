@@ -139,6 +139,7 @@ class IndexField(ListField):
     def __init__(self, search_manager, *args, **kwargs):
         self.search_manager = search_manager
         kwargs['field_type'] = models.CharField(max_length=500)
+        kwargs['editable'] = False
         super(IndexField, self).__init__(*args, **kwargs)
 
     def pre_save(self, model_instance, add):
