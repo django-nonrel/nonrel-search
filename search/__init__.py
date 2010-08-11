@@ -3,7 +3,7 @@ from search.core import default_splitter, site_language, SearchManager, \
 
 def autodiscover():
     """
-    Automatically add managers from search_index modules.
+    Automatically add managers from search_indexes modules.
     """
     import imp
     from django.conf import settings
@@ -29,13 +29,13 @@ def autodiscover():
         # but doesn't actually try to import the module. So skip this app if
         # its search_indexes.py doesn't exist
         try:
-            imp.find_module('search_index', app_path)
+            imp.find_module('search_indexes', app_path)
         except ImportError:
             continue
 
         # Step 3: import the app's search_index file. If this has errors we want them
         # to bubble up.
-        import_module("%s.search_index" % app)
+        import_module("%s.search_indexes" % app)
 
 def register(model, mgr_name, fields_to_index, indexer=None,
     splitter=default_splitter, relation_index=True, integrate='*', filters={},
