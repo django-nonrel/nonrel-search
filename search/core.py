@@ -437,8 +437,9 @@ class RelationIndexQuery(QueryTraits):
         self.model = model
         self.query = query
 
-    def order(self, *args, **kwargs):
-        self.query = self.query.order(*args, **kwargs)
+    def order_by(self, *args, **kwargs):
+        self.query = self.query.order_by(*args, **kwargs)
+        return self
 
     def filter(self, *args, **kwargs):
         self.query = self.query.filter(*args, **kwargs)
