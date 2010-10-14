@@ -28,16 +28,16 @@ class Indexed(models.Model):
     check = models.BooleanField()
     value = models.CharField(max_length=500)
 
-register(Indexed, 'one_index', 'one', indexer=startswith)
-register(Indexed, 'one_two_index', ('one', 'two'))
-register(Indexed, 'value_index', 'value', integrate=('one', 'check'))
+register(Indexed, 'one', search_index='one_index', indexer=startswith)
+register(Indexed, ('one', 'two'), search_index='one_two_index')
+register(Indexed, 'value', integrate=('one', 'check'), search_index='value_index')
 
 # Test filters
 class FiltersIndexed(models.Model):
     value = models.CharField(max_length=500)
     check = models.BooleanField()
 
-register(FiltersIndexed, 'checked_index', 'value', filters={'check':True, })
+register(FiltersIndexed, 'value', filters={'check':True, }, search_index='checked_index')
 
 class TestIndexed(TestCase):
     def setUp(self):

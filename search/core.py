@@ -215,7 +215,7 @@ class SearchManager(models.Manager):
         # set default_manager to None such that the default_manager will be set
         # to 'objects' via the class-prepared signal calling
         # ensure_default_manager
-        setattr(model, '_default_manager', None)
+#        setattr(model, '_default_manager', None)
         self.name = name
         # add IndexField to the model if we do not use the relation_index
         if not self.relation_index:
@@ -314,7 +314,7 @@ class SearchManager(models.Manager):
         attrs = dict(__module__=self.__module__)
         # By default we integrate everything when using relation index
         # manager will add the IndexField to the relation index automaticaly
-        if self.relation_index and self.integrate == ('*',):
+        if self.integrate == ('*',):
             self.integrate = tuple(field.name
                                    for field in self.model._meta.fields
                                    if not isinstance(field, IndexField))
@@ -328,30 +328,30 @@ class SearchManager(models.Manager):
                     self.model._meta.object_name.lower(),
                     self.name, field_name,
                 )
-        manager_name = self.name
-        attrs[manager_name] = SearchManager(self.fields_to_index,
-            splitter=self.splitter, indexer=self.indexer,
-            language=self.language, relation_index=False)
-        if self.relation_index:
-            owner = self
-            def __init__(self, *args, **kwargs):
-                # Save some space: don't copy the whole indexed text into the
-                # relation index field unless the field gets integrated.
-                field_names = [field.name for field in self._meta.fields]
-                owner_field_names = [field.name
-                                     for field in owner.model._meta.fields]
-                for key, value in kwargs.items():
-                    if key in field_names or key not in owner_field_names:
-                        continue
-                    setattr(self, key, value)
-                    del kwargs[key]
-                models.Model.__init__(self, *args, **kwargs)
-            attrs['__init__'] = __init__
-            self._relation_index_model = type(
-                'RelationIndex_%s_%s_%s' % (self.model._meta.app_label,
-                                            self.model._meta.object_name,
-                                            self.name),
-                (models.Model,), attrs)
+
+        owner = self
+        def __init__(self, *args, **kwargs):
+            # Save some space: don't copy the whole indexed text into the
+            # relation index field unless the field gets integrated.
+            field_names = [field.name for field in self._meta.fields]
+            owner_field_names = [field.name
+                                 for field in owner.model._meta.fields]
+            for key, value in kwargs.items():
+                if key in field_names or key not in owner_field_names:
+                    continue
+                setattr(self, key, value)
+                del kwargs[key]
+            models.Model.__init__(self, *args, **kwargs)
+        attrs['__init__'] = __init__
+
+        self._relation_index_model = type(
+            'RelationIndex_%s_%s_%s' % (self.model._meta.app_label,
+                                        self.model._meta.object_name,
+                                        self.name),
+            (models.Model,), attrs)
+        self._relation_index_model.add_to_class(self.name, SearchManager(
+            self.fields_to_index, splitter=self.splitter, indexer=self.indexer,
+            language=self.language, relation_index=False))
 
     def get_index_values(self, parent):
         filters = []
@@ -446,10 +446,18 @@ class RelationIndexQuery(QueryTraits):
         return self
 
     def __getitem__(self, index):
+        pks_slice = index
+        if not isinstance(index, slice):
+            pks_slice = slice(None, index + 1, None)
+
         pks = [instance.pk if isinstance(instance, models.Model) else instance['pk']
-                for instance in self.query[index]]
-        return [item for item in self.model.objects.filter(
-            pk__in=pks) if item]
+                for instance in self.query[pks_slice]]
+        if not isinstance(index, slice):
+            return self.model.objects.filter(pk__in=pks)[index]
+        return self.model.objects.filter(pk__in=pks)[pks_slice]
+#        return [item for item in self.model.objects.filter(
+#            pk__in=pks) if item]
+        
 
     def count(self):
         return self.query.count()
