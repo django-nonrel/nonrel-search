@@ -1,0 +1,5 @@
+include LICENSE
+include README.rst
+recursive-include search/media/search *.css
+recursive-include search/media/search *.js
+recursive-include search/media/search *.png
