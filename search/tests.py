@@ -54,7 +54,7 @@ class TestIndexed(TestCase):
             Indexed(extra_data=extra_data, one=u'one%d' % i, two='two%d' % i).save()
 
         for i in range(3):
-            Indexed(extra_data=extra_data, one=(None, u'ÜÄÖ-+!#><|', 'blub')[i],
+            Indexed(extra_data=extra_data, one=(None, u'ÃœÃ„Ã–-+!#><|', 'blub')[i],
                     check=bool(i%2), value=u'value%d test-word' % i).save()
 
         for i in range(3):
@@ -76,7 +76,7 @@ class TestIndexed(TestCase):
         self.assertEqual(len(Indexed.value_index.search('value0').filter(
             check=False)), 1)
         self.assertEqual(len(Indexed.value_index.search('value1').filter(
-            check=True, one=u'ÜÄÖ-+!#><|')), 1)
+            check=True, one=u'ÃœÃ„Ã–-+!#><|')), 1)
         self.assertEqual(len(Indexed.value_index.search('value2').filter(
             check__exact=False, one='blub')), 1)
 
