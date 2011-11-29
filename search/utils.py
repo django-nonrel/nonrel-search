@@ -19,7 +19,7 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
     is None, that part of the ranking will be skipped. rank_descending determines whether or not the ranking sort is 
     applied in descending order.
     
-    If exact_match_field is set, any results matching all query keyworkds in the given field (in any order) will be 
+    If exact_match_field is set, any results matching all query keywords in the given field (in any order) will be 
     returned as the only results. exact_match_min_keywords can be used to tune when this rule is applied.
     
     blacklisted_keywords in the query are ignored.
