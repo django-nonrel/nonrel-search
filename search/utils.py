@@ -53,7 +53,7 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
 
         query_set = search(model, query, language, search_index)
         if query_filter_args:
-            query_set.filter(**query_filter_args)
+            query_set = query_set.filter(**query_filter_args)
         if ranking_field:
             query_set = query_set.order_by('-' + ranking_field)
             query_results = query_set[:per_query_limit]
@@ -62,7 +62,7 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
         for keyword in keywords:
             query_set = search(model, keyword, language, search_index)
             if query_filter_args:
-                query_set.filter(**query_filter_args)
+                query_set = query_set.filter(**query_filter_args)
             if ranking_field:
                 order_by = ranking_field
                 if rank_descending:
