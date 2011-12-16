@@ -17,8 +17,8 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
     
     If primary_rank_by_number_of_matches is True, the results will first be ranked by the number of keywords they 
     match and then by their desc_ranking_field. Otherwise, they will just be ranked by ranking_field. If ranking_field
-    is None, that part of the ranking will be skipped. rank_descending determines whether or not the ranking sort is 
-    applied in descending order.
+    is None, that part of the ranking will be skipped. ranking_field_descending determines whether or not the ranking
+    sort is applied in descending order.
     
     If exact_match_field is set, any results matching all query keywords in the given field (in any order) will be 
     returned as the only results. exact_match_min_keywords can be used to tune when this rule is applied.
@@ -36,11 +36,14 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
     
     Pre-sliced list of objects (not filterable).
     
-    Example:
+    Simple example:
+    results = partial_match_search(Indexed, 'foo bar', search_index='test_index')
 
+    Production example:
+    search_query_string = 'tech news'
     query_filter_args['is_deleted'] = False
     catalog_items = partial_match_search(CatalogItem, search_query_string, query_filter_args=query_filter_args,
-                                         ranking_field='search_rank', rank_descending=True, 
+                                         ranking_field='search_rank', ranking_field_descending=True, 
                                          exact_match_field='title', blacklisted_keywords=['com'])
     
     """
