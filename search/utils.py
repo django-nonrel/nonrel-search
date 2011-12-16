@@ -1,4 +1,3 @@
-## PULSE PATCH: Added this to django nonrel search
 
 import logging
 from django.conf import settings
