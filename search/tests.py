@@ -8,6 +8,7 @@ settings.SEARCH_BACKEND = 'search.backends.immediate_update'
 
 from search import register
 from search.core import SearchManager, startswith
+from search.utils import partial_match_search
 
 
 # ExtraData is used for ForeignKey tests
@@ -27,6 +28,9 @@ class Indexed(models.Model):
     two = models.CharField(max_length=500)
     check = models.BooleanField()
     value = models.CharField(max_length=500)
+    
+    def __unicode__(self):
+        return ':'.join((repr(self.one), repr(self.two), repr(self.check), repr(self.value)))
 
 register(Indexed, 'one', search_index='one_index', indexer=startswith)
 register(Indexed, ('one', 'two'), search_index='one_two_index')
@@ -101,4 +105,33 @@ class TestIndexed(TestCase):
         value = Indexed.value_index.search('value3').get()
         value.delete()
         self.assertEqual(len(Indexed.value_index.search('value3')), 0)
+
+    def test_partial_match_search(self):
+        import logging
+        results = partial_match_search(Indexed, 'bar',\
+                                       search_index='one_two_index')
+        self.assertEqual(len(results), 2)
+        
+        results = partial_match_search(Indexed, 'foo',\
+                                       search_index='one_two_index')
+        self.assertEqual(len(results), 1)
+        
+        results = partial_match_search(Indexed, 'foo bar',\
+                                       search_index='one_two_index')
+        self.assertEqual(len(results), 2)
+
+        results = partial_match_search(Indexed, 'one',\
+                                       search_index='one_index')
+        self.assertEqual(len(results), 6)
+        
+        results = partial_match_search(Indexed, 'one0 one1 one2',\
+                                       search_index='one_index')
+        self.assertEqual(len(results), 3)
+        
+        results = partial_match_search(Indexed, 'one one0 one1 one2',\
+                                       search_index='one_index')
+        self.assertEqual(len(results), 6)
+        self.assertEqual(repr(results[0]), "<Indexed: u'one0':u'two0':False:u''>")
+        self.assertEqual(repr(results[5]), "<Indexed: u'OneOne2':u'':False:u''>")
+
 
