@@ -5,9 +5,9 @@ from search.core import search, default_splitter, get_stop_words
 
 
 def partial_match_search(model, query, query_filter_args=None, primary_rank_by_number_of_matches=True, ranking_field=None,
-                         rank_descending=True, exact_match_field=None, exact_match_min_keywords=2, blacklisted_keywords=[],
+                         ranking_field_descending=True, exact_match_field=None, exact_match_min_keywords=2, blacklisted_keywords=[],
                          per_query_limit=40, debug=False, search_index='search_index', splitter=default_splitter,
-                         language=settings.LANGUAGE_CODE):
+                         language=settings.LANGUAGE_CODE, final_result_limit=None):
     """ 
     Args & Description:
     
@@ -16,8 +16,8 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
     
     If primary_rank_by_number_of_matches is True, the results will first be ranked by the number of keywords they 
     match and then by their desc_ranking_field. Otherwise, they will just be ranked by ranking_field. If ranking_field
-    is None, that part of the ranking will be skipped. rank_descending determines whether or not the ranking sort is 
-    applied in descending order.
+    is None, that part of the ranking will be skipped. ranking_field_descending determines whether or not the ranking
+    sort is applied in descending order.
     
     If exact_match_field is set, any results matching all query keywords in the given field (in any order) will be 
     returned as the only results. exact_match_min_keywords can be used to tune when this rule is applied.
@@ -35,11 +35,14 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
     
     Pre-sliced list of objects (not filterable).
     
-    Example:
+    Simple example:
+    results = partial_match_search(Indexed, 'foo bar', search_index='test_index')
 
+    Production example:
+    search_query_string = 'tech news'
     query_filter_args['is_deleted'] = False
     catalog_items = partial_match_search(CatalogItem, search_query_string, query_filter_args=query_filter_args,
-                                         ranking_field='search_rank', rank_descending=True, 
+                                         ranking_field='search_rank', ranking_field_descending=True, 
                                          exact_match_field='title', blacklisted_keywords=['com'])
     
     """
@@ -65,13 +68,16 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
                 query_set = query_set.filter(**query_filter_args)
             if ranking_field:
                 order_by = ranking_field
-                if rank_descending:
+                if ranking_field_descending:
                     order_by = '-' + ranking_field
                 query_set = query_set.order_by(order_by)
             query_results = query_set[:per_query_limit]
+            if debug:
+                logging.info("Result for of query for '" + repr(keyword) + "': " + repr(query_results) )
             query_result_list.extend(query_results)
 
-        logging.info("Deduplicate and create primary search ranking based on how many keywords matched.")
+        if debug:
+            logging.info("Deduplicate and create primary search ranking based on how many keywords matched.")
         query_result_set = {}
         dedup_query_result_list = []
         all_keyword_match_dedup_query_result_list = []
@@ -86,16 +92,16 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
                             blacklisted_keywords, splitter, language, debug)
                     if len(keywords - exact_match_field_keywords) > 0:
                         all_keyword_match = False
-            if result.feed_url in query_result_set:
-                query_result_set[result.feed_url].__partial_match_search__primary_rank += 1
+            if result._get_pk_val() in query_result_set:
+                query_result_set[result._get_pk_val()].__partial_match_search__primary_rank += 1
                 if debug:
-                    logging.info("number " + repr(query_result_set[result.feed_url].__partial_match_search__primary_rank) +
+                    logging.info("number " + repr(query_result_set[result._get_pk_val()].__partial_match_search__primary_rank) +
                                  " instance of result: " + repr(result))
             else:
                 if debug:
                     logging.info("first instance of result: " + repr(result))
-                query_result_set[result.feed_url] = result
-                setattr(query_result_set[result.feed_url], '__partial_match_search__primary_rank', 1)
+                query_result_set[result._get_pk_val()] = result
+                setattr(query_result_set[result._get_pk_val()], '__partial_match_search__primary_rank', 1)
                 dedup_query_result_list.append(result)
                 if all_keyword_match:
                     all_keyword_match_dedup_query_result_list.append(result)
@@ -109,20 +115,30 @@ def partial_match_search(model, query, query_filter_args=None, primary_rank_by_n
             if debug:
                 logging.info("Found " + repr(len(dedup_query_result_list)) + " results.")
 
-        if rank_descending:
-            sorted_ranked_query_result_set = sorted(dedup_query_result_list, 
-                                                    key=lambda result: (result.__partial_match_search__primary_rank,
-                                                    getattr(result, ranking_field)), reverse=True)
+        if ranking_field:
+            if ranking_field_descending:
+                sorted_ranked_query_result_set = sorted(dedup_query_result_list, 
+                                                        key=lambda result: (result.__partial_match_search__primary_rank,
+                                                        getattr(result, ranking_field)), reverse=True)
+            else:
+                sorted_ranked_query_result_set = sorted(dedup_query_result_list, 
+                                                        key=lambda result: (-result.__partial_match_search__primary_rank,
+                                                        getattr(result, ranking_field)))
         else:
             sorted_ranked_query_result_set = sorted(dedup_query_result_list, 
-                                                    key=lambda result: (-result.__partial_match_search__primary_rank,
-                                                    getattr(result, ranking_field)))
+                                                        key=lambda result: -result.__partial_match_search__primary_rank)
+
+        if final_result_limit:
+            sorted_ranked_query_result_set = sorted_ranked_query_result_set[:final_result_limit]
 
         if debug:
             logging.info('final result ordering:')
             for result in sorted_ranked_query_result_set:
-                logging.info("primary_rank: " + repr(result.__partial_match_search__primary_rank) + ", ranking_field: " +
+                if ranking_field:
+                    logging.info("primary_rank: " + repr(result.__partial_match_search__primary_rank) + ", ranking_field: " +
                              repr(getattr(result, ranking_field)) + ", result: " + repr(result))
+                else:
+                    logging.info("primary_rank: " + repr(result.__partial_match_search__primary_rank) + ", result: " + repr(result))
 
         return sorted_ranked_query_result_set
     except:
